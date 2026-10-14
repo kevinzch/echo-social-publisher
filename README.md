@@ -2,7 +2,7 @@
 
 本地优先的单人贴文发布工具：一次编辑，发布到 **X (Twitter)** 和 **Threads**；支持手动分段长贴文、中英文字符分别计数、平台限额实时校验、图片、本地草稿箱与定时发布。零 npm 依赖，Node ≥ 22 即可运行。
 
-> API / 开发者账号申请步骤见 **[docs/API_APPLY_GUIDE.md](docs/API_APPLY_GUIDE.md)**（X 与 Threads 均免费可申请，个人使用免费层足够）。
+> API / 开发者账号申请步骤见 **[docs/API_APPLY_GUIDE.md](docs/API_APPLY_GUIDE.md)**（X 为按量付费约 $0.015/条、新账号有最多 $70 免费积分；Threads 免费 250 条/天，个人使用成本极低）。
 
 ## 快速开始
 
