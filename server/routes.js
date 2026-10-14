@@ -13,6 +13,12 @@ function nowIso() { return new Date().toISOString(); }
 function makeRoutes(ctx) {
   const { store, accounts, publisher, scheduler, media, config } = ctx;
 
+  /** 各平台 OAuth 回调地址（展示给用户去平台后台登记；与授权请求发送的 redirect_uri 一致） */
+  function platformRedirectUri(id) {
+    const p = getPlatform(id, config);
+    return p && typeof p.redirectUri === 'string' ? p.redirectUri : null;
+  }
+
   function accountLabel(a) {
     const p = getPlatform(a.platform, config);
     return `${p ? p.constructor.name : a.platform} @${a.username}`;
@@ -112,7 +118,13 @@ function makeRoutes(ctx) {
     // ---------- 配置 / 账号 ----------
     {
       method: 'GET', pattern: '/api/config',
-      handler: async (req, res) => sendJson(res, 200, { platforms: listPlatforms(), appBaseUrl: config.appBaseUrl })
+      handler: async (req, res) => sendJson(res, 200, {
+        platforms: listPlatforms(config).map((p) => ({
+          ...p,
+          redirectUri: platformRedirectUri(p.id)
+        })),
+        appBaseUrl: config.appBaseUrl
+      })
     },
     { method: 'GET', pattern: '/api/accounts', handler: async (req, res) => sendJson(res, 200, { accounts: accounts.listAccounts() }) },
     {

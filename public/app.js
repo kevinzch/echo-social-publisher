@@ -692,6 +692,11 @@ function renderAccounts() {
         : '<a class="btn" href="#/guide">查看申请指南</a>') +
       '</div>' +
       '<div class="small muted" style="margin-top:8px">' + esc(p.limits.note) + '</div>' +
+      (p.redirectUri
+        ? '<div class="small" style="margin-top:6px">回调地址（需在平台后台登记）：<code>' + esc(p.redirectUri) + '</code> <button class="btn sm ghost" data-copy="' + esc(p.redirectUri) + '">复制</button>' +
+          (p.id === 'threads' ? '<div class="muted" style="margin-top:4px">Threads 要求回调必须为 HTTPS——本机请先用隧道（如 cloudflared）拿到地址，再设置 <code>THREADS_REDIRECT_URI</code>（见设置页与申请指南）</div>' : '') +
+          '</div>'
+        : '') +
       '<div style="margin-top:10px">';
     var accts = connectedOf(p.id);
     if (!accts.length) html += '<div class="small muted">未连接账号</div>';
@@ -708,6 +713,14 @@ function renderAccounts() {
   view.innerHTML = html;
 
   view.addEventListener('click', function (ev) {
+    var cp = ev.target.closest('[data-copy]');
+    if (cp) {
+      var text = cp.getAttribute('data-copy');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { toast('已复制：' + text, 'ok'); }, function () { toast('复制失败，请手动复制', 'err'); });
+      } else { toast('浏览器不支持自动复制', 'err'); }
+      return;
+    }
     var c = ev.target.closest('[data-connect]');
     if (c) {
       var pid = c.getAttribute('data-connect');

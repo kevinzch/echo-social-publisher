@@ -52,8 +52,10 @@ X_CLIENT_SECRET=你的ClientSecret
    - `THREADS_CLIENT_ID` = App ID
    - `THREADS_CLIENT_SECRET` = App Secret
 5. **产品 → Threads API → 设置**：
-   - **OAuth 重定向 URI**：填 `http://127.0.0.1:8787/auth/threads/callback` 并保存。
-   - 取消勾选 "Require HTTPS"（如果该选项存在）。
+   - **跳转回调网址（Redirect URI）**：填 **HTTPS** 地址并保存。
+     - ⚠️ **Meta 强制要求回调必须使用 HTTPS**：填 `http://127.0.0.1:8787/auth/threads/callback` 会被拒绝并提示「表单无法保存：所有跳转网址都必须使用 HTTPS」（与 X 相反，X 接受 `http://127.0.0.1`）。
+     - 本机方案：用隧道拿到 HTTPS 地址（见 2.4），回调填 `https://<隧道域名>/auth/threads/callback`，同时在 Echo `.env` 设置 `THREADS_REDIRECT_URI=https://<隧道域名>/auth/threads/callback`。
+   - 如果有 "Require HTTPS" 之类的开关，保持开启。
 6. **应用 → 应用权限（App Review）**：确认需要的权限 `threads_basic`（读身份）与 `threads_content_publish`（发帖）。
    - 这两个权限在**开发模式（Development Mode）**下对**应用管理员本人**即可用——正是 Echo 这种单人工具的场景，**无需提交审核**。
    - 只有当你未来想让其他 Threads 用户也通过 Echo 发帖时，才需要提交 App Review（Advanced Access）。
@@ -74,21 +76,35 @@ THREADS_CLIENT_SECRET=你的AppSecret
 
 重启后在「账号」页点 **连接 Threads 账号**，授权页点允许即可。
 
-### 2.4 发图片的关键限制：图片必须公网可达
+> 「账号」页每个平台卡片会显示当前生效的回调地址（带复制按钮），把它原样填进平台后台即可——**两处必须逐字符一致**，否则授权会报 redirect_uri 不匹配。
 
-Threads 的 API 与 X 不同：它不接收上传的二进制文件，而是去**抓取你给的图片 URL**。Echo 本地启动时图片地址是 `http://127.0.0.1:8787/...`，Meta 的服务器访问不到，所以：
+### 2.4 关键限制：回调与图片都要求 HTTPS 公网地址
 
-- **纯文字帖**：不受影响，直接可发。
-- **带图帖**：需要一个公网地址。最省事的做法是用临时隧道把本地服务暴露出去，例如：
+Threads 与 X 有两点根本差异，都需要一个**公网 HTTPS 地址**：
+
+1. **授权回调必须 HTTPS**（Meta 强制；`http://127.0.0.1` 会被控制台拒绝）。
+2. **发布图片必须公网可达**：Threads API 不接收上传的二进制文件，而是去抓取你给的 `image_url`；`http://127.0.0.1` 对 Meta 服务器不可达（纯文字帖不受影响）。
+
+**一次性解决：给本地服务开一条 HTTPS 隧道**
 
 ```bash
-# 任选其一，运行后会得到类似 https://random-name.trycloudflare.com 的地址
+# 任选其一（任一条都会打印 https://xxx.trycloudflare.com / https://xxx.ngrok-free.app 之类的地址）
 cloudflared tunnel --url http://127.0.0.1:8787
 npx localtunnel --port 8787
 ngrok http 8787
 ```
 
-然后把隧道地址填到 Echo「设置 → Threads 图片公网地址」（或写入 `.env` 的 `THREADS_IMAGE_BASE_URL`），再发布带图贴文。
+拿到隧道地址（记为 `<TUNNEL>`）后配置三处：
+
+| 位置 | 填什么 |
+| --- | --- |
+| Meta 应用设置 → 跳转回调网址 | `https://<TUNNEL>/auth/threads/callback` |
+| Echo `.env` → `THREADS_REDIRECT_URI` | `https://<TUNNEL>/auth/threads/callback` |
+| Echo `.env` → `THREADS_IMAGE_BASE_URL`（或设置页） | `https://<TUNNEL>` |
+
+X 不受影响，继续用 `http://127.0.0.1:8787/auth/x/callback`（X 接受 HTTP + 127.0.0.1）。
+
+⚠️ cloudflared 快速隧道的域名每次重启都会变——**换域名后要同步更新 Meta 后台和 `.env` 两处**；ngrok 免费版的域名同样会变，需要固定域名可升级或改用自托管方案。隧道只在需要连接/发图时开着即可，日常纯文字 X 发帖不需要。
 
 ---
 
@@ -104,7 +120,10 @@ A：个人使用（每天几条贴文）完全够。X 免费层若遇到月度�
 A：Threads 需要 App Review 才能给非管理员账号发帖；X 只要你的应用本身允许。Echo 定位为**单人本地工具**，`data/` 目录里有你的令牌，请勿随意分享。
 
 **Q：回调地址必须用 8787 端口吗？**
-A：可以用其他端口，但三处要一致：`PORT`、`APP_BASE_URL`、平台后台登记的回调 URL。**一律使用 `127.0.0.1` 而非 `localhost`**（X 控制台会拒绝 localhost，见下条）。
+A：可以用其他端口，但要保证「Echo 侧地址」与「平台后台登记的回调」逐字符一致：`PORT`、`APP_BASE_URL`（或各平台的 `X_REDIRECT_URI` / `THREADS_REDIRECT_URI` 覆盖值）。注意两平台规则不同：**X 用 `http://127.0.0.1`（拒绝 localhost），Threads 必须 HTTPS**。
+
+**Q：Threads 后台保存时报「表单无法保存：所有跳转网址都必须使用 HTTPS」？**
+A：Meta 强制 Threads 的回调必须是 HTTPS，不接受 `http://127.0.0.1`（这与 X 相反）。解决：开一条 HTTPS 隧道（cloudflared/ngrok，见 2.4），把 `https://<隧道域名>/auth/threads/callback` 填入 Meta 后台，同时在 Echo `.env` 设置 `THREADS_REDIRECT_URI` 为同一地址。
 
 **Q：X 后台保存时报 "Not a valid URL format" / 授权时提示 "Something went wrong"？**
 A：X 的开发者控制台**拒绝 `localhost` 形式**的回调/网站 URL（错误提示很含糊，这是已知行为）。改用 `127.0.0.1`：

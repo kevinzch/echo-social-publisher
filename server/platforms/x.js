@@ -30,11 +30,17 @@ class XAdapter extends PlatformAdapter {
     };
   }
 
-  buildAuthorizeUrl({ state, codeChallenge }) {
+  /** 平台专属回调地址（X 控制台拒绝 localhost，默认 127.0.0.1；可被 env 覆盖） */
+  get redirectUri() {
+    return this.config.x.redirectUri || this.config.x.callbackUrl;
+  }
+
+  buildAuthorizeUrl({ state, codeChallenge, redirectUri }) {
+    const redirect = redirectUri || this.redirectUri;
     const u = new URL(this.config.x.authBaseUrl + '/i/oauth2/authorize');
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('client_id', this.config.x.clientId);
-    u.searchParams.set('redirect_uri', this.config.x.callbackUrl);
+    u.searchParams.set('redirect_uri', redirect);
     u.searchParams.set('scope', 'tweet.read tweet.write users.read offline.access');
     u.searchParams.set('state', state);
     u.searchParams.set('code_challenge', codeChallenge);
@@ -51,12 +57,13 @@ class XAdapter extends PlatformAdapter {
     return headers;
   }
 
-  async exchangeCode({ code, codeVerifier }) {
+  async exchangeCode({ code, codeVerifier, redirectUri }) {
+    const redirect = redirectUri || this.redirectUri;
     const params = new URLSearchParams({
       code,
       grant_type: 'authorization_code',
       client_id: this.config.x.clientId,
-      redirect_uri: this.config.x.callbackUrl,
+      redirect_uri: redirect,
       code_verifier: codeVerifier
     });
     const res = await httpRequest(this.config.x.apiBaseUrl + '/2/oauth2/token', {

@@ -10,7 +10,7 @@ const path = require('node:path');
 const XAdapter = require('../server/platforms/x');
 const { startMock, baseUrlOf, PNG_1PX_BASE64 } = require('./helpers');
 
-function makeAdapter(base) {
+function makeAdapter(base, redirectUri) {
   return new XAdapter({
     x: {
       clientId: 'test-client-id',
@@ -18,7 +18,8 @@ function makeAdapter(base) {
       authBaseUrl: base,
       apiBaseUrl: base,
       uploadBaseUrl: base,
-      callbackUrl: 'http://localhost:8787/auth/x/callback'
+      callbackUrl: 'http://localhost:8787/auth/x/callback',
+      redirectUri: redirectUri || 'http://127.0.0.1:8787/auth/x/callback'
     }
   });
 }
@@ -42,6 +43,17 @@ test('buildAuthorizeUrl 带 PKCE / state / scope', () => {
   assert.ok(url.includes('offline.access'));
 });
 
+test('redirect_uri 使用平台专属配置（默认 127.0.0.1，可 env 覆盖）', () => {
+  // 默认：127.0.0.1（X 控制台拒绝 localhost）
+  let url = makeAdapter('https://twitter.com').buildAuthorizeUrl({ state: 's', codeChallenge: 'c' });
+  assert.ok(url.includes(encodeURIComponent('http://127.0.0.1:8787/auth/x/callback')));
+
+  // 覆盖：例如隧道 HTTPS 地址
+  url = makeAdapter('https://twitter.com', 'https://tunnel.example.com/auth/x/callback').buildAuthorizeUrl({ state: 's', codeChallenge: 'c' });
+  assert.ok(url.includes(encodeURIComponent('https://tunnel.example.com/auth/x/callback')));
+  assert.equal(makeAdapter('x').redirectUri, 'http://127.0.0.1:8787/auth/x/callback');
+});
+
 test('limits 暴露 X 规则', () => {
   const lim = makeAdapter('x').limits();
   assert.equal(lim.maxChars, 280);
@@ -57,6 +69,7 @@ test('exchangeCode → tokens；fetchProfile → 身份', async (t) => {
       assert.equal(req.form.grant_type, 'authorization_code');
       assert.equal(req.form.code_verifier, 'verifier-1');
       assert.equal(req.form.client_id, 'test-client-id');
+      assert.equal(req.form.redirect_uri, 'http://127.0.0.1:8787/auth/x/callback');
       return { body: { access_token: 'at-1', refresh_token: 'rt-1', expires_in: 7200, token_type: 'bearer' } };
     }
     if (req.path === '/2/users/me') {

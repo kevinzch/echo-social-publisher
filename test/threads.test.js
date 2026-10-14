@@ -7,14 +7,15 @@ const assert = require('node:assert/strict');
 const ThreadsAdapter = require('../server/platforms/threads');
 const { startMock, baseUrlOf } = require('./helpers');
 
-function makeAdapter(base, imageBaseUrl) {
+function makeAdapter(base, imageBaseUrl, redirectUri) {
   return new ThreadsAdapter({
     threads: {
       clientId: 'tid',
       clientSecret: 'tsecret',
       apiBaseUrl: base,
-      callbackUrl: 'http://localhost:8787/auth/threads/callback',
-      imageBaseUrl: imageBaseUrl || 'https://public.example.com'
+      callbackUrl: 'http://127.0.0.1:8787/auth/threads/callback',
+      imageBaseUrl: imageBaseUrl || 'https://public.example.com',
+      redirectUri: redirectUri || 'http://127.0.0.1:8787/auth/threads/callback'
     }
   });
 }
@@ -23,10 +24,20 @@ test('buildAuthorizeUrl 带 scope / state', () => {
   const url = makeAdapter('https://graph.threads.net').buildAuthorizeUrl({ state: 's1' });
   assert.ok(url.startsWith('https://threads.net/oauth/authorize'));
   assert.ok(url.includes('client_id=tid'));
-  assert.ok(url.includes('redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Fauth%2Fthreads%2Fcallback'));
+  assert.ok(url.includes('redirect_uri=http%3A%2F%2F127.0.0.1%3A8787%2Fauth%2Fthreads%2Fcallback'));
   assert.ok(url.includes('threads_content_publish'));
   assert.ok(url.includes('state=s1'));
   assert.ok(url.includes('response_type=code'));
+});
+
+test('redirect_uri 使用平台专属配置（Meta 强制 HTTPS，可 env 覆盖为隧道地址）', () => {
+  // 默认跟随 APP_BASE_URL（本机 HTTP 无法用于 Meta，需隧道覆盖）
+  assert.equal(makeAdapter('x').redirectUri, 'http://127.0.0.1:8787/auth/threads/callback');
+
+  // 覆盖为隧道 HTTPS 地址
+  const adapter = makeAdapter('x', 'https://public.example.com', 'https://tunnel.example.com/auth/threads/callback');
+  const url = adapter.buildAuthorizeUrl({ state: 's1' });
+  assert.ok(url.includes(encodeURIComponent('https://tunnel.example.com/auth/threads/callback')));
 });
 
 test('limits 暴露 Threads 规则', () => {
@@ -42,6 +53,7 @@ test('exchangeCode：短期 token → 长期 token', async (t) => {
     if (req.path === '/oauth/access_token' && req.method === 'POST') {
       assert.equal(req.form.grant_type, 'authorization_code');
       assert.equal(req.form.client_secret, 'tsecret');
+      assert.equal(req.form.redirect_uri, 'http://127.0.0.1:8787/auth/threads/callback');
       return { body: { access_token: 'short-1', token_type: 'bearer', expires_in: 3600 } };
     }
     if (req.path === '/access_token') {

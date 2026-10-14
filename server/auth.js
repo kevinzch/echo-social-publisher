@@ -28,8 +28,9 @@ class AccountService {
     }
     const { state, verifier } = this.pending.create(platformId);
     const codeChallenge = pkceChallenge(verifier);
-    const authUrl = platform.buildAuthorizeUrl({ state, codeChallenge, verifier });
-    return { state, authUrl, callbackUrl: platform.callbackUrl ? platform.callbackUrl() : null };
+    const redirectUri = platform.redirectUri;
+    const authUrl = platform.buildAuthorizeUrl({ state, codeChallenge, redirectUri });
+    return { state, authUrl, redirectUri, callbackUrl: platform.callbackUrl ? platform.callbackUrl() : null };
   }
 
   /** OAuth 回调：校验 state → 换 token → 拉资料 → 落库 */
@@ -40,7 +41,7 @@ class AccountService {
     if (!pending) throw Object.assign(new Error('state 无效或已过期，请重新连接'), { statusCode: 400 });
     if (pending.platform !== platformId) throw Object.assign(new Error('state 与平台不匹配'), { statusCode: 400 });
 
-    const { profile, tokens } = await platform.exchangeCode({ code, codeVerifier: pending.verifier });
+    const { profile, tokens } = await platform.exchangeCode({ code, codeVerifier: pending.verifier, redirectUri: platform.redirectUri });
     const accountId = `${platformId}:${profile.externalId}`;
     const existing = this.store.accounts.get(accountId);
     const now = new Date().toISOString();

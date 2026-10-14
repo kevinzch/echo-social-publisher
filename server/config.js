@@ -99,4 +99,11 @@ const config = {
 config.x.callbackUrl = config.appBaseUrl + config.x.callbackPath;
 config.threads.callbackUrl = config.appBaseUrl + config.threads.callbackPath;
 
+// 每平台独立的 OAuth 回调地址（默认跟随 APP_BASE_URL）。
+// 背景：X 控制台拒绝 localhost（须用 127.0.0.1，HTTP 可）；Meta Threads 强制要求 HTTPS，
+// 本机 HTTP 无法满足——需用隧道（cloudflared/ngrok）拿到 HTTPS 地址后单独配置。
+// 平台后台登记的回调必须与此处逐字符一致。
+config.x.redirectUri = env('X_REDIRECT_URI', config.x.callbackUrl).replace(/\/+$/, '');
+config.threads.redirectUri = env('THREADS_REDIRECT_URI', config.threads.callbackUrl).replace(/\/+$/, '');
+
 module.exports = config;

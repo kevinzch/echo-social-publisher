@@ -31,18 +31,25 @@ class ThreadsAdapter extends PlatformAdapter {
     };
   }
 
-  buildAuthorizeUrl({ state }) {
+  /** 平台专属回调地址（Meta 强制 HTTPS；本机需用隧道地址，可被 env 覆盖） */
+  get redirectUri() {
+    return this.config.threads.redirectUri || this.config.threads.callbackUrl;
+  }
+
+  buildAuthorizeUrl({ state, redirectUri }) {
+    const redirect = redirectUri || this.redirectUri;
     const u = new URL('https://threads.net/oauth/authorize');
     u.searchParams.set('client_id', this.config.threads.clientId);
-    u.searchParams.set('redirect_uri', this.config.threads.callbackUrl);
+    u.searchParams.set('redirect_uri', redirect);
     u.searchParams.set('scope', 'threads_basic,threads_content_publish');
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('state', state);
     return u.toString();
   }
 
-  async exchangeCode({ code }) {
+  async exchangeCode({ code, redirectUri }) {
     const base = this.config.threads.apiBaseUrl;
+    const redirect = redirectUri || this.redirectUri;
     // 1) code → 短期 token
     const shortRes = await httpRequest(base + '/oauth/access_token', {
       method: 'POST',
@@ -52,7 +59,7 @@ class ThreadsAdapter extends PlatformAdapter {
         client_secret: this.config.threads.clientSecret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: this.config.threads.callbackUrl
+        redirect_uri: redirect
       })
     });
     if (shortRes.status !== 200 || !shortRes.json || !shortRes.json.access_token) {
