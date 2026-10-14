@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Echo · 个人贴文发布台</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand" onclick="location.hash='#/composer'">
+        <span class="brand-logo">📡</span>
+        <span class="brand-name">Echo</span>
+      </div>
+      <nav class="nav" id="nav">
+        <a href="#/composer" data-route="composer"><span class="nav-ico">✍️</span>写作台</a>
+        <a href="#/drafts" data-route="drafts"><span class="nav-ico">📝</span>草稿箱 <span class="badge" id="draft-badge" hidden></span></a>
+        <a href="#/queue" data-route="queue"><span class="nav-ico">⏰</span>发布队列 <span class="badge" id="queue-badge" hidden></span></a>
+        <a href="#/history" data-route="history"><span class="nav-ico">📜</span>发布记录</a>
+        <a href="#/accounts" data-route="accounts"><span class="nav-ico">🔗</span>账号</a>
+        <a href="#/settings" data-route="settings"><span class="nav-ico">⚙️</span>设置</a>
+        <a href="#/guide" data-route="guide"><span class="nav-ico">📖</span>申请指南</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="sched-state" id="sched-state">调度器就绪</div>
+      </div>
+    </aside>
+    <main class="main" id="view"><div class="loading">加载中…</div></main>
+  </div>
+  <div id="toast-root"></div>
+  <script src="/shared/chars.js"></script>
+  <script src="/shared/threadText.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
