@@ -111,6 +111,16 @@ test('分段未勾选任何平台时阻止发布并提示段号', () => {
   assert.ok(schedFn.indexOf('segmentsWithoutAnyPlatform(allSegs, targetPlats)') !== -1, 'scheduleDraft 缺少覆盖校验');
 });
 
+test('平台图标使用官方 SVG 路径', () => {
+  assert.match(appJs, /PLATFORM_ICON_PATHS/);
+  assert.match(appJs, /function platformIcon/);
+  assert.match(appJs, /M14\.234 10\.162/);   // X 官方路径片段
+  assert.match(appJs, /M18\.263 11\.097/);   // Threads 官方路径片段
+  // 关键位置使用图标而非纯文字
+  assert.ok(appJs.indexOf("esc(a.platform === 'x' ? 'X'") === -1, '账号列表不应再用文字标签');
+  assert.match(css, /\.plat-ico/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);

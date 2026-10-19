@@ -129,7 +129,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .seg-plat { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; user-select: none; }
 .seg-plat input { margin: 0; cursor: pointer; }
 .seg-plat.off { opacity: .45; }
-.seg-plat .plt { font-size: 10px; padding: 1px 6px; }
+.seg-plat .plt { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; flex: none; }
 .seg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .seg-no {
   background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
@@ -167,7 +167,9 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
   border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: #fff;
 }
 .account-pick label:hover { border-color: #c7d2fe; }
-.account-pick .plt { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
+.account-pick .plt { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; flex: none; }
+.plt { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; flex: none; }
+.plat-ico { display: block; }
 .plt.x { background: #111827; color: #fff; }
 .plt.threads { background: var(--threads-color); color: #fff; }
 
