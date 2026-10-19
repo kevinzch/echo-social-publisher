@@ -42,7 +42,7 @@ class PlatformAdapter {
     throw new Error(`${this.constructor.name}.buildAuthorizeUrl 未实现`);
   }
 
-  /** code → { profile, tokens } */
+  /** code → tokens（调用方需再调 fetchProfile 拉取身份，见 auth.js handleCallback） */
   async exchangeCode(/* { code, codeVerifier } */) {
     throw new Error(`${this.constructor.name}.exchangeCode 未实现`);
   }

@@ -41,7 +41,12 @@ class AccountService {
     if (!pending) throw Object.assign(new Error('state 无效或已过期，请重新连接'), { statusCode: 400 });
     if (pending.platform !== platformId) throw Object.assign(new Error('state 与平台不匹配'), { statusCode: 400 });
 
-    const { profile, tokens } = await platform.exchangeCode({ code, codeVerifier: pending.verifier, redirectUri: platform.redirectUri });
+    // 1) code → tokens；2) tokens → 用户资料（exchangeCode 不返回 profile，需单独拉取）
+    const tokens = await platform.exchangeCode({ code, codeVerifier: pending.verifier, redirectUri: platform.redirectUri });
+    const profile = await platform.fetchProfile(tokens.accessToken);
+    if (!profile || !profile.externalId) {
+      throw Object.assign(new Error('获取平台用户资料失败，请重试'), { statusCode: 502 });
+    }
     const accountId = `${platformId}:${profile.externalId}`;
     const existing = this.store.accounts.get(accountId);
     const now = new Date().toISOString();
