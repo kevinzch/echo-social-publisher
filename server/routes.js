@@ -126,7 +126,20 @@ function makeRoutes(ctx) {
         appBaseUrl: config.appBaseUrl
       })
     },
-    { method: 'GET', pattern: '/api/accounts', handler: async (req, res) => sendJson(res, 200, { accounts: accounts.listAccounts() }) },
+    {
+      method: 'POST', pattern: '/api/accounts/manual',
+      handler: async (req, res) => {
+        try {
+          const body = await readJsonBody(req);
+          const view = await accounts.connectWithManualToken(body.platform, body.token);
+          sendJson(res, 200, { account: view });
+        } catch (err) {
+          sendError(res, err.statusCode || 400, err.message);
+        }
+      }
+    },
+    {
+      method: 'GET', pattern: '/api/accounts', handler: async (req, res) => sendJson(res, 200, { accounts: accounts.listAccounts() }) },
     {
       method: 'DELETE', pattern: '/api/accounts/:id',
       handler: async (req, res, params) => {

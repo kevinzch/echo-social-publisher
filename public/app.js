@@ -704,16 +704,44 @@ function renderAccounts() {
       html += '<div class="row" style="padding:6px 0;border-top:1px solid var(--border)">' +
         '<span class="plt ' + esc(a.platform) + '">' + esc(a.platform) + '</span>' +
         '<span><strong>' + esc(a.displayName || a.username) + '</strong> <span class="muted small">@' + esc(a.username) + '</span></span>' +
+        (a.manual ? '<span class="chip">手动令牌</span>' : '') +
         (a.tokenExpired ? '<span class="chip over">令牌已过期</span>' : '') +
         '<span class="spacer"></span>' +
         '<button class="btn sm danger" data-unbind="' + esc(a.id) + '">解绑</button></div>';
     });
+    html += '</div>';
+    // Threads：OAuth 回调配置受阻时的手动令牌入口（Meta 后台「用户口令生成器」）
+    if (p.id === 'threads' && !connectedOf('threads').length) {
+      html += '<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:10px">' +
+        '<div class="small muted" style="margin-bottom:6px">回调地址保存受阻？备用通道：在 Meta 应用后台「Threads API → 设置 → 用户口令生成器」生成长期口令，粘贴到下面直接连接（文字帖无需隧道；带图帖仍需隧道）。</div>' +
+        '<div class="row"><input type="text" id="manual-token" placeholder="粘贴 Threads 长期访问口令" style="flex:1">' +
+        '<button class="btn primary sm" id="btn-manual-token">令牌连接</button></div></div>';
+    }
     html += '</div></div>';
   });
   view.innerHTML = html;
 
+  // 手动令牌连接（Threads 备用通道）
+  var btnManual = $('#btn-manual-token');
+  if (btnManual) {
+    btnManual.addEventListener('click', function () {
+      var token = ($('#manual-token').value || '').trim();
+      if (!token) { toast('请先粘贴长期访问口令', 'err'); return; }
+      btnManual.disabled = true;
+      btnManual.textContent = '验证中…';
+      api('POST', '/api/accounts/manual', { platform: 'threads', token: token }).then(async function (r) {
+        toast('Threads 令牌连接成功：@' + r.account.username, 'ok');
+        await refreshAccounts();
+        renderAccounts();
+      }).catch(function (e) {
+        toast(e.message, 'err');
+        btnManual.disabled = false;
+        btnManual.textContent = '令牌连接';
+      });
+    });
+  }
+
   view.addEventListener('click', function (ev) {
-    var cp = ev.target.closest('[data-copy]');
     if (cp) {
       var text = cp.getAttribute('data-copy');
       if (navigator.clipboard && navigator.clipboard.writeText) {

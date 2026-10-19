@@ -174,3 +174,74 @@ test('ensureFreshToken：X 令牌临期自动刷新，Threads 临期刷新', asy
   await accounts.ensureFreshToken(okAcc);
   assert.equal(refreshCalls, before);
 });
+
+test('手动令牌连接 Threads：验证资料后落库（绕开 OAuth 回调）', async (t) => {
+  const server = await startMock((req) => {
+    if (req.path === '/v1.0/me') {
+      assert.equal(req.query.get('access_token'), 'THQ_long_lived_token');
+      return { body: { id: '17800000000000000', username: 'kevinzch' } };
+    }
+    return null;
+  });
+  t.after(() => server.close());
+
+  const store = makeStore();
+  const accounts = new AccountService(store, {
+    threads: {
+      clientId: 'tid', clientSecret: 'secret', apiBaseUrl: baseUrlOf(server),
+      redirectUri: 'https://tunnel.example.com/auth/threads/callback'
+    }
+  });
+
+  const view = await accounts.connectWithManualToken('threads', 'THQ_long_lived_token');
+  assert.equal(view.id, 'threads:17800000000000000');
+  assert.equal(view.username, 'kevinzch');
+  assert.equal(view.manual, true);
+
+  const stored = store.accounts.get('threads:17800000000000000');
+  assert.equal(stored.tokens.accessToken, 'THQ_long_lived_token');
+  assert.equal(stored.tokens.refreshToken, 'THQ_long_lived_token');
+  assert.ok(stored.tokens.expiresAt - Date.now() > 58 * 24 * 3600 * 1000);
+
+  assert.equal(accounts.listAccounts().filter((a) => a.platform === 'threads').length, 1);
+});
+
+test('手动令牌：无效令牌返回 401 且不落库', async (t) => {
+  const server = await startMock((req) => {
+    if (req.path === '/v1.0/me') return { status: 401, body: { error: { message: 'Invalid OAuth access token' } } };
+    return null;
+  });
+  t.after(() => server.close());
+
+  const store = makeStore();
+  const accounts = new AccountService(store, {
+    threads: { clientId: 'tid', clientSecret: 's', apiBaseUrl: baseUrlOf(server), redirectUri: 'https://x.example.com/cb' }
+  });
+
+  await assert.rejects(
+    () => accounts.connectWithManualToken('threads', 'bad_token_value_123456'),
+    /令牌验证失败/
+  );
+  assert.equal(store.accounts.list().length, 0);
+});
+
+test('手动令牌：仅支持 Threads；格式校验', async () => {
+  const store = makeStore();
+  const accounts = new AccountService(store, {
+    x: { clientId: 'cid', apiBaseUrl: 'http://mock.invalid', redirectUri: 'http://127.0.0.1:8787/auth/x/callback' },
+    threads: { clientId: 'tid', clientSecret: 's', apiBaseUrl: 'http://mock.invalid', redirectUri: 'https://x.example.com/cb' }
+  });
+
+  await assert.rejects(
+    () => accounts.connectWithManualToken('x', 'some_long_enough_token_value'),
+    /仅支持 Threads/
+  );
+  await assert.rejects(
+    () => accounts.connectWithManualToken('threads', 'short'),
+    /格式不正确/
+  );
+  await assert.rejects(
+    () => accounts.connectWithManualToken('threads', ''),
+    /格式不正确/
+  );
+});

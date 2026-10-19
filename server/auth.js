@@ -72,6 +72,54 @@ class AccountService {
     return this.store.accounts.list().map((a) => this.publicView(a));
   }
 
+  /**
+   * 手动粘贴长期令牌连接（Threads 专用）
+   * 用于绕开 OAuth 回调配置：令牌来源 = Meta 应用后台的「用户口令生成器」。
+   * 仍会调用 fetchProfile 验证令牌有效性后才落库。
+   */
+  async connectWithManualToken(platformId, token) {
+    const platform = getPlatform(platformId, this.config);
+    if (!platform) throw Object.assign(new Error(`未知平台: ${platformId}`), { statusCode: 404 });
+    if (platformId !== 'threads') {
+      throw Object.assign(new Error('手动令牌连接目前仅支持 Threads（X 的访问令牌 2 小时即过期，必须走 OAuth 自动刷新）'), { statusCode: 400 });
+    }
+    const clean = typeof token === 'string' ? token.trim() : '';
+    if (clean.length < 20) {
+      throw Object.assign(new Error('令牌格式不正确（太短），请粘贴 Meta 后台生成的完整长期令牌'), { statusCode: 400 });
+    }
+    let profile;
+    try {
+      profile = await platform.fetchProfile(clean);
+    } catch (err) {
+      throw Object.assign(new Error(`令牌验证失败：${err.message}（请确认是「用户口令生成器」生成的有效令牌）`), { statusCode: 401 });
+    }
+    if (!profile || !profile.externalId) {
+      throw Object.assign(new Error('令牌验证失败：无法读取用户资料'), { statusCode: 401 });
+    }
+    const accountId = `${platformId}:${profile.externalId}`;
+    const existing = this.store.accounts.get(accountId);
+    const now = new Date().toISOString();
+    // 长期令牌约 60 天有效；确切到期时间未知，按 59 天估算，
+    // 到期前 ensureFreshToken 会自动用 th_refresh_token 续期（长期令牌满 24h 可续）
+    const expiresAt = Date.now() + 59 * 24 * 3600 * 1000;
+    const account = {
+      id: accountId,
+      platform: platformId,
+      externalId: profile.externalId,
+      username: profile.username,
+      displayName: profile.displayName || profile.username,
+      tokens: { accessToken: clean, refreshToken: clean, tokenType: 'Bearer', scope: null, expiresAt },
+      manual: true,
+      enabled: true,
+      createdAt: existing ? existing.createdAt : now,
+      updatedAt: now
+    };
+    if (existing) await this.store.accounts.update(accountId, account);
+    else await this.store.accounts.insert(account);
+    await this.store.log('info', 'auth', `手动令牌连接账号 ${platformId}:${profile.username}`);
+    return this.publicView(account);
+  }
+
   publicView(account) {
     return {
       id: account.id,
@@ -79,6 +127,7 @@ class AccountService {
       username: account.username,
       displayName: account.displayName,
       enabled: account.enabled !== false,
+      manual: !!account.manual,
       tokenExpiresAt: account.tokens && account.tokens.expiresAt ? new Date(account.tokens.expiresAt).toISOString() : null,
       tokenExpired: !!(account.tokens && account.tokens.expiresAt && account.tokens.expiresAt < Date.now()),
       createdAt: account.createdAt,
