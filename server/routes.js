@@ -97,15 +97,17 @@ function makeRoutes(ctx) {
   /** 为目标账号创建队列记录（segments 直传，不依赖草稿） */
   async function enqueueFromSegments(segments, accountIds, scheduledAt, draftId = null) {
     const connected = store.accounts.list().filter((a) => a.enabled !== false);
-    const targets = accountIds && accountIds.length
-      ? connected.filter((a) => accountIds.includes(a.id))
-      : connected;
-    if (!targets.length) {
+    if (!connected.length) {
       throw Object.assign(new Error('没有已连接的账号，请先在"账号"页连接 X / Threads'), { statusCode: 400 });
     }
-    const invalid = (accountIds || []).filter((id) => !targets.find((t) => t.id === id));
-    if (invalid.length) {
-      throw Object.assign(new Error(`账号不存在或已解绑: ${invalid.join(', ')}`), { statusCode: 400 });
+    // 必须显式指定账号：绝不回退为"全部账号"，避免未选择时静默群发
+    const ids = Array.isArray(accountIds) ? accountIds.filter((x) => typeof x === 'string') : [];
+    if (!ids.length) {
+      throw Object.assign(new Error('未指定目标账号，请至少勾选一个账号再发布'), { statusCode: 400 });
+    }
+    const targets = connected.filter((a) => ids.includes(a.id));
+    if (!targets.length) {
+      throw Object.assign(new Error(`账号不存在或已解绑: ${ids.join(', ')}`), { statusCode: 400 });
     }
     const posts = [];
     for (const account of targets) {

@@ -383,7 +383,8 @@ function renderComposer() {
     '    <div id="preview-wrap" style="margin-top:16px"' + (state.showPreview ? '' : ' hidden') + '></div>' +
     '  </div>' +
     '  <aside>' +
-    '    <div class="card"><h3>目标账号</h3><div class="account-pick">' + accountsHtml + '</div></div>' +
+    '    <div class="card"><h3>目标账号</h3><div class="account-pick">' + accountsHtml + '</div>' +
+    '    <div class="small muted" style="margin-top:8px">需至少勾选一个账号才能发布（不会默认全选）。</div></div>' +
     '    <div class="card"><h3>平台规则</h3>' + limitsHtml + '</div>' +
     '  </aside>' +
     '</div>' +
@@ -569,10 +570,10 @@ function setComposerBusy(busy) {
   if (pub) pub.textContent = busy ? '⏳ 发布中…' : '🚀 立即发布';
 }
 
-/** 目标账号列表（未勾选则默认全部已连接账号） */
+/** 目标账号列表：只返回用户显式勾选的账号（未勾选时为空，绝不默认全选） */
 function targetAccounts() {
   return state.accounts.filter(function (a) {
-    return !state.selectedAccounts.size || state.selectedAccounts.has(a.id);
+    return state.selectedAccounts.has(a.id);
   });
 }
 
@@ -597,7 +598,7 @@ async function publishDraft() {
   var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
   if (!segments.length) { toast('内容为空，无法发布', 'err'); return; }
   var targets = targetAccounts();
-  if (!targets.length) { toast('请先在右侧勾选目标账号（或先连接账号）', 'err'); return; }
+  if (!targets.length) { toast('未勾选目标账号：请先在右侧至少勾选一个账号（不会默认发到全部账号）', 'err'); return; }
 
   setComposerBusy(true);
   openPublishModal('发布进程', targets);
@@ -628,7 +629,7 @@ async function scheduleDraft() {
   var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
   if (!segments.length) { toast('内容为空，无法定时', 'err'); return; }
   var targets = targetAccounts();
-  if (!targets.length) { toast('请先在右侧勾选目标账号（或先连接账号）', 'err'); return; }
+  if (!targets.length) { toast('未勾选目标账号：请先在右侧至少勾选一个账号（不会默认发到全部账号）', 'err'); return; }
 
   setComposerBusy(true);
   openPublishModal('定时发布', targets);

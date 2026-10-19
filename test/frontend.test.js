@@ -61,6 +61,19 @@ test('图片交互：输入框添加 + 剪贴板粘贴 + 媒体条 + 清空同�
   assert.match(css, /\.media-strip/);
 });
 
+test('未勾选目标账号时不得默认群发', () => {
+  const start = appJs.indexOf('function targetAccounts');
+  const fn = appJs.slice(start, start + 400);
+  assert.ok(start > 0, '未找到 targetAccounts');
+  assert.ok(fn.indexOf('!state.selectedAccounts.size') === -1, 'targetAccounts 不应在未选择时回退为全部账号');
+  assert.match(fn, /state\.selectedAccounts\.has\(a\.id\)/);
+  // 发布与定时都必须先校验目标账号
+  const pubStart = appJs.indexOf('async function publishDraft');
+  const schedStart = appJs.indexOf('async function scheduleDraft');
+  assert.match(appJs.slice(pubStart, schedStart), /if \(!targets\.length\)/);
+  assert.match(appJs.slice(schedStart, schedStart + 1200), /if \(!targets\.length\)/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js"/);
   assert.match(html, /src="\/shared\/threadText\.js"/);

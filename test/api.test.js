@@ -373,3 +373,27 @@ test('写作台 compose：空内容 / 无账号 报错', async (t) => {
   assert.equal(empty.status, 400);
   assert.match(empty.data.error, /内容为空/);
 });
+
+test('已连接账号但未指定目标账号：拒绝发布（不得默认群发）', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+  await seedAccount(app, 'threads:1', 'threads');
+
+  const pub = await req(base, 'POST', '/api/compose/publish', {
+    segments: [{ text: '不能默认群发', media: [] }]
+  });
+  assert.equal(pub.status, 400);
+  assert.match(pub.data.error, /未指定目标账号/);
+
+  const sched = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [{ text: '不能默认群发', media: [] }],
+    scheduledAt: new Date(Date.now() + 3600_000).toISOString()
+  });
+  assert.equal(sched.status, 400);
+  assert.match(sched.data.error, /未指定目标账号/);
+
+  // 队列里不应产生任何记录
+  const posts = await req(base, 'GET', '/api/posts');
+  assert.equal(posts.data.posts.length, 0);
+});
