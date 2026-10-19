@@ -137,9 +137,11 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 }
 .seg-counts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .chip {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
   font-size: 11px; padding: 2px 7px; border-radius: 20px; font-weight: 600;
   background: #f3f4f6; color: var(--text-2);
 }
+.chip .plat-ico { flex: none; }
 .chip.x { background: #e8f5fd; color: #0f1419; }
 .chip.threads { background: #f5e9fd; color: var(--threads-color); }
 .chip.over { background: var(--err-bg); color: var(--err); }

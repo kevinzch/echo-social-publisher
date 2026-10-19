@@ -121,6 +121,13 @@ test('平台图标使用官方 SVG 路径', () => {
   assert.match(css, /\.plat-ico/);
 });
 
+test('计数 chip 图标与文字同行（不换行）', () => {
+  const chipBlock = css.slice(css.indexOf('.chip {'), css.indexOf('.chip {') + 260);
+  assert.match(chipBlock, /inline-flex/);
+  assert.match(chipBlock, /white-space:\s*nowrap/);
+  assert.match(chipBlock, /align-items:\s*center/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
