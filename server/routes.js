@@ -97,7 +97,7 @@ function makeRoutes(ctx) {
   }
 
   /** 为目标账号创建队列记录（segments 直传，不依赖草稿） */
-  async function enqueueFromSegments(segments, accountIds, scheduledAt, draftId = null) {
+  async function enqueueFromSegments(segments, accountIds, scheduledAt, draftId = null, opts = {}) {
     const connected = store.accounts.list().filter((a) => a.enabled !== false);
     if (!connected.length) {
       throw Object.assign(new Error('没有已连接的账号，请先在"账号"页连接 X / Threads'), { statusCode: 400 });
@@ -110,6 +110,20 @@ function makeRoutes(ctx) {
     const targets = connected.filter((a) => ids.includes(a.id));
     if (!targets.length) {
       throw Object.assign(new Error(`账号不存在或已解绑: ${ids.join(', ')}`), { statusCode: 400 });
+    }
+    // 覆盖校验（一次性提交全部账号时启用）：某分段把所有目标平台都取消 → 无处可发，直接拒绝
+    if (opts.validateCoverage) {
+      const targetPlats = Array.from(new Set(targets.map((a) => a.platform)));
+      const bad = [];
+      segments.forEach((s, i) => {
+        const hasContent = (s.text || '').trim() || (s.media || []).length;
+        if (!hasContent) return;
+        const any = targetPlats.some((p) => !(Array.isArray(s.exclude) && s.exclude.includes(p)));
+        if (!any) bad.push(i + 1);
+      });
+      if (bad.length) {
+        throw Object.assign(new Error(`第 ${bad.join('、')} 段没有勾选任何发布平台，请至少选择一个平台或清空该段`), { statusCode: 400 });
+      }
     }
     const posts = [];
     for (const account of targets) {
@@ -288,7 +302,7 @@ function makeRoutes(ctx) {
           if (Number.isNaN(at.getTime())) throw Object.assign(new Error('scheduledAt 时间格式无效'), { statusCode: 400 });
           if (at.getTime() < Date.now() - 60_000) throw Object.assign(new Error('定时时间已过，请选择将来的时间'), { statusCode: 400 });
           const segments = normalizeSegments(body);
-          const posts = await enqueueFromSegments(segments, body.accountIds, at.toISOString());
+          const posts = await enqueueFromSegments(segments, body.accountIds, at.toISOString(), null, { validateCoverage: true });
           await store.log('info', 'schedule', `写作台内容已加入队列（${posts.length} 个账号）`, { scheduledAt: at.toISOString() });
           sendJson(res, 200, { posts: posts.map(postView) });
         } catch (err) {

@@ -693,12 +693,33 @@ async function afterComposeDone() {
   renderComposer();
 }
 
+/** 找出"所有目标平台都被取消"的分段，返回从 1 开始的段号 */
+function segmentsWithoutAnyPlatform(segments, targetPlats) {
+  var bad = [];
+  segments.forEach(function (s, i) {
+    var hasContent = (s.text || '').trim() || (s.media || []).length;
+    if (!hasContent) return;
+    var any = targetPlats.some(function (p) { return (s.exclude || []).indexOf(p) === -1; });
+    if (!any) bad.push(i + 1);
+  });
+  return bad;
+}
+
 async function publishDraft() {
   if (state.publishing) return;
-  var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
+  var allSegs = currentSegments();
+  var segments = allSegs.filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
   if (!segments.length) { toast('内容为空，无法发布', 'err'); return; }
   var targets = targetAccounts();
   if (!targets.length) { toast('未勾选目标账号：请先在右侧至少勾选一个账号（不会默认发到全部账号）', 'err'); return; }
+
+  // 分段把所选平台全部取消 → 该段无处可发，阻止发布并提示
+  var targetPlats = Array.from(new Set(targets.map(function (a) { return a.platform; })));
+  var bad = segmentsWithoutAnyPlatform(allSegs, targetPlats);
+  if (bad.length) {
+    toast('第 ' + bad.join('、') + ' 段没有勾选任何发布平台，无法发布。请至少勾选一个平台，或清空该段内容。', 'err');
+    return;
+  }
 
   setComposerBusy(true);
   openPublishModal('发布进程', targets);
@@ -726,10 +747,18 @@ async function scheduleDraft() {
   if (state.publishing) return;
   var when = $('#sched-time').value;
   if (!when) { toast('请先选择定时时间', 'err'); return; }
-  var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
+  var allSegs = currentSegments();
+  var segments = allSegs.filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
   if (!segments.length) { toast('内容为空，无法定时', 'err'); return; }
   var targets = targetAccounts();
   if (!targets.length) { toast('未勾选目标账号：请先在右侧至少勾选一个账号（不会默认发到全部账号）', 'err'); return; }
+
+  var targetPlats = Array.from(new Set(targets.map(function (a) { return a.platform; })));
+  var bad = segmentsWithoutAnyPlatform(allSegs, targetPlats);
+  if (bad.length) {
+    toast('第 ' + bad.join('、') + ' 段没有勾选任何发布平台，无法定时发布。请至少勾选一个平台，或清空该段内容。', 'err');
+    return;
+  }
 
   setComposerBusy(true);
   openPublishModal('定时发布', targets);

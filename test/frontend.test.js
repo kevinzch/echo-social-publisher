@@ -100,6 +100,17 @@ test('目标账号主开关与分段卡片联动', () => {
   assert.match(appJs, /selectedAccounts: new Set\(\)/);
 });
 
+test('分段未勾选任何平台时阻止发布并提示段号', () => {
+  assert.match(appJs, /function segmentsWithoutAnyPlatform/);
+  const pubStart = appJs.indexOf('async function publishDraft');
+  const schedStart = appJs.indexOf('async function scheduleDraft');
+  const pubFn = appJs.slice(pubStart, schedStart);
+  assert.ok(pubFn.indexOf('segmentsWithoutAnyPlatform(allSegs, targetPlats)') !== -1, 'publishDraft 缺少覆盖校验');
+  assert.ok(pubFn.indexOf('没有勾选任何发布平台') !== -1, 'publishDraft 缺少提示文案');
+  const schedFn = appJs.slice(schedStart, schedStart + 1600);
+  assert.ok(schedFn.indexOf('segmentsWithoutAnyPlatform(allSegs, targetPlats)') !== -1, 'scheduleDraft 缺少覆盖校验');
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js"/);
   assert.match(html, /src="\/shared\/threadText\.js"/);

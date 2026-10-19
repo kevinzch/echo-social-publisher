@@ -436,3 +436,24 @@ test('分段平台开关：该平台全部分段被排除时拒绝发布', async
   const posts = await req(base, 'GET', '/api/posts');
   assert.equal(posts.data.posts.length, 0);
 });
+
+test('分段把所有平台都取消：定时发布被拒绝并指出段号', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+  await seedAccount(app, 'threads:1', 'threads');
+
+  const r = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [
+      { text: '正常段', media: [], exclude: [] },
+      { text: '两个平台都取消的段', media: [], exclude: ['x', 'threads'] }
+    ],
+    accountIds: ['x:1', 'threads:1'],
+    scheduledAt: new Date(Date.now() + 3600_000).toISOString()
+  });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /第 2 段没有勾选任何发布平台/);
+
+  const posts = await req(base, 'GET', '/api/posts');
+  assert.equal(posts.data.posts.length, 0, '拒绝后不应留下任何队列记录');
+});
