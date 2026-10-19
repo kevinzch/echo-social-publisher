@@ -82,6 +82,7 @@ var state = {
   draftId: null,
   selectedAccounts: new Set(),
   segMedia: [],          // [[mediaId, ...], ...] 与分段一一对应
+  segExclude: [],        // [['x'], ...] 该分段不发布的平台列表
   activeSeg: 0,
   showPreview: false,
   publishing: false,
@@ -110,6 +111,7 @@ async function init() {
   window.addEventListener('hashchange', route);
   // 全局点击委托：只绑定一次，杜绝重复渲染导致的监听叠加
   document.addEventListener('click', handleGlobalClick);
+  document.addEventListener('change', handleGlobalChange);
   route();
   handleQueryToast();
   setInterval(tickCountdown, 1000);
@@ -182,22 +184,30 @@ function currentSegments() {
   if (!texts.length) {
     texts = [ta ? ta.value.trim() : ''];
   }
-  // 分段数量变化时对齐媒体数组
+  // 分段数量变化时对齐媒体/平台开关数组
   while (state.segMedia.length < texts.length) state.segMedia.push([]);
   if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
+  while (state.segExclude.length < texts.length) state.segExclude.push([]);
+  if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
   return texts.map(function (t, i) {
-    return { text: t, media: (state.segMedia[i] || []).slice() };
+    return {
+      text: t,
+      media: (state.segMedia[i] || []).slice(),
+      exclude: (state.segExclude[i] || []).slice()
+    };
   });
 }
 
-/** 输入内容变化后同步媒体数组：内容清空时一并清空分段图片（修复"图片复活"） */
+/** 输入内容变化后同步媒体/平台数组：内容清空时一并清空（修复"图片复活"） */
 function syncSegMedia() {
   var ta = $('#composer-text');
   if (!ta) return;
   var texts = EchoThreadText.splitSegments(ta.value);
-  if (!texts.length) { state.segMedia = []; return; }
+  if (!texts.length) { state.segMedia = []; state.segExclude = []; return; }
   while (state.segMedia.length < texts.length) state.segMedia.push([]);
   if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
+  while (state.segExclude.length < texts.length) state.segExclude.push([]);
+  if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
 }
 
 /** 光标所在分段索引（按分隔符计数，越界收敛到合法范围） */
@@ -258,14 +268,27 @@ function editorPlatformChips(text) {
   return html;
 }
 
+var LINK_RE = /(https?:\/\/|www\.)\S+/i;
+
+/** 当前显示平台开关的平台（跟随已选目标账号；未选则用全部已连接账号） */
+function visiblePlatforms() {
+  var ids = [];
+  var targets = targetAccounts();
+  var src = targets.length ? targets : state.accounts;
+  src.forEach(function (a) { if (ids.indexOf(a.platform) === -1) ids.push(a.platform); });
+  if (!ids.length) ids = (state.config.platforms || []).map(function (p) { return p.id; });
+  return ids;
+}
+
 function renderSegments() {
   var box = $('#seg-list');
   if (!box) return;
   var segments = currentSegments();
   if (!segments.length || (segments.length === 1 && !segments[0].text.trim())) {
-    box.innerHTML = '<div class="empty">输入内容后这里会显示分段卡片（每段独立计数、配图）</div>';
+    box.innerHTML = '<div class="empty">输入内容后这里会显示分段卡片（每段独立计数、配图、平台开关）</div>';
     return;
   }
+  var plats = visiblePlatforms();
   var html = '';
   segments.forEach(function (seg, i) {
     var over = false;
@@ -275,10 +298,25 @@ function renderSegments() {
       var c = lim.weighted ? a.weighted : a.total;
       if (c > lim.maxChars) over = true;
     });
-    html += '<div class="seg-card' + (over ? ' over' : '') + '" data-seg="' + i + '">' +
+    var hasLink = LINK_RE.test(seg.text);
+    var excluded = seg.exclude || [];
+    var allExcluded = plats.length > 0 && plats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
+    var cls = 'seg-card' + (over ? ' over' : '') + (hasLink ? ' has-link' : '') + (allExcluded ? ' muted-card' : '');
+    html += '<div class="' + cls + '" data-seg="' + i + '">' +
       '<div class="seg-head"><span class="seg-no">' + (i + 1) + '</span>' +
       '<span class="muted small">第 ' + (i + 1) + ' 段</span>' +
+      (hasLink ? '<span class="chip warn" title="X 对含链接的帖子按 $0.20/条计费">含链接</span>' : '') +
       '<div class="seg-counts">' + editorPlatformChips(seg.text) + '</div></div>';
+    // 分段级平台开关：取消勾选即不发布到该平台
+    html += '<div class="seg-plats">';
+    plats.forEach(function (pid) {
+      var p = (state.config.platforms || []).find(function (x) { return x.id === pid; });
+      var on = excluded.indexOf(pid) === -1;
+      html += '<label class="seg-plat' + (on ? '' : ' off') + '">' +
+        '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') + '>' +
+        '<span class="plt ' + esc(pid) + '">' + esc(p ? p.name.split(' ')[0] : pid) + '</span></label>';
+    });
+    html += '</div>';
     // 文本预览
     var preview = seg.text.length > 140 ? seg.text.slice(0, 140) + '…' : seg.text;
     html += '<div class="seg-text small muted">' + esc(preview).replace(/\n/g, '<br>') + '</div>';
@@ -397,6 +435,7 @@ function renderComposer() {
     if (draft) {
       ta.value = EchoThreadText.joinSegments(draft.segments.map(function (s) { return s.text; }));
       state.segMedia = draft.segments.map(function (s) { return (s.media || []).slice(); });
+      state.segExclude = draft.segments.map(function (s) { return (s.exclude || []).slice(); });
       state.selectedAccounts = new Set(draft.accountIds || []);
       $$('.acct-check').forEach(function (c) { c.checked = state.selectedAccounts.has(c.value); });
     }
@@ -582,6 +621,7 @@ async function afterComposeDone() {
   var ta = $('#composer-text');
   if (ta) ta.value = '';
   state.segMedia = [];
+  state.segExclude = [];
   state.showPreview = false;
   try { localStorage.removeItem(LS_KEY); } catch (e) { }
   if (state.draftId) {
@@ -671,9 +711,15 @@ function renderPreview() {
     var acct = targets.find(function (a) { return a.platform === pid; });
     var name = acct ? (acct.displayName || acct.username) : '我';
     var user = acct ? acct.username : 'me';
-    segments.forEach(function (seg, i) {
+    // 按分段平台开关过滤：被排除的段不在此平台预览
+    var visible = segments.filter(function (s) { return (s.exclude || []).indexOf(pid) === -1; });
+    if (!visible.length) {
+      html += '<div class="empty" style="width:100%">该平台没有可发布的分段（已被平台开关排除）</div>';
+      return;
+    }
+    visible.forEach(function (seg, i) {
       html += mockPost(p, name, user, seg, limits(pid));
-      if (i < segments.length - 1) html += '<div class="mock-thread-arrow" style="width:100%">↓</div>';
+      if (i < visible.length - 1) html += '<div class="mock-thread-arrow" style="width:100%">↓</div>';
     });
   });
   html += '</div></div>';
@@ -881,6 +927,22 @@ function renderAccounts() {
 }
 
 /* ---------- 全局点击委托（只绑定一次，避免重复渲染叠加监听） ---------- */
+/* ---------- 全局 change 委托（分段平台开关等） ---------- */
+function handleGlobalChange(ev) {
+  var el = ev.target.closest('[data-seg-plat]');
+  if (!el) return;
+  var seg = parseInt(el.getAttribute('data-seg'), 10) || 0;
+  var plat = el.getAttribute('data-seg-plat');
+  var list = state.segExclude[seg] || (state.segExclude[seg] = []);
+  if (el.checked) {
+    state.segExclude[seg] = list.filter(function (p) { return p !== plat; });
+  } else if (list.indexOf(plat) === -1) {
+    list.push(plat);
+  }
+  renderSegments();
+  if (state.showPreview) renderPreview();
+}
+
 function handleGlobalClick(ev) {
   var t = ev.target;
 

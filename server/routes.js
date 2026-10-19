@@ -84,10 +84,12 @@ function makeRoutes(ctx) {
     if (Array.isArray(body.segments)) {
       segments = body.segments.map((s) => ({
         text: typeof s.text === 'string' ? s.text : '',
-        media: Array.isArray(s.media) ? s.media.filter((m) => typeof m === 'string') : []
+        media: Array.isArray(s.media) ? s.media.filter((m) => typeof m === 'string') : [],
+        // 该分段不发布的平台列表（如带链接分段只发 Threads，避开 X 的 $0.20/条）
+        exclude: Array.isArray(s.exclude) ? s.exclude.filter((p) => typeof p === 'string') : []
       }));
     } else if (typeof body.text === 'string') {
-      segments = ThreadText.splitSegments(body.text).map((t) => ({ text: t, media: [] }));
+      segments = ThreadText.splitSegments(body.text).map((t) => ({ text: t, media: [], exclude: [] }));
     }
     const hasContent = segments.some((s) => (s.text || '').trim() || (s.media || []).length);
     if (!hasContent) throw Object.assign(new Error('内容为空，无法发布'), { statusCode: 400 });
@@ -111,12 +113,15 @@ function makeRoutes(ctx) {
     }
     const posts = [];
     for (const account of targets) {
+      // 按分段的平台开关过滤：exclude 里包含该平台的段不发给它
+      const segs = segments.filter((s) => !(Array.isArray(s.exclude) && s.exclude.includes(account.platform)));
+      if (!segs.length) continue;
       const post = {
         id: `post_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
         draftId: draftId,
         platform: account.platform,
         accountId: account.id,
-        segments: JSON.parse(JSON.stringify(segments)),
+        segments: JSON.parse(JSON.stringify(segs)),
         scheduledAt,
         status: 'pending',
         attempts: 0,
@@ -128,6 +133,9 @@ function makeRoutes(ctx) {
       };
       await store.posts.insert(post);
       posts.push(post);
+    }
+    if (!posts.length) {
+      throw Object.assign(new Error('所选平台没有可发布的分段（可能被分段的平台开关全部排除）'), { statusCode: 400 });
     }
     return posts;
   }

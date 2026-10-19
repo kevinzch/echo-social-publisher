@@ -74,6 +74,17 @@ test('未勾选目标账号时不得默认群发', () => {
   assert.match(appJs.slice(schedStart, schedStart + 1200), /if \(!targets\.length\)/);
 });
 
+test('分段级平台开关与含链接高亮', () => {
+  assert.match(appJs, /data-seg-plat/);
+  assert.match(appJs, /function handleGlobalChange/);
+  assert.match(appJs, /document\.addEventListener\('change', handleGlobalChange\)/);
+  assert.match(appJs, /LINK_RE/);
+  assert.match(appJs, /has-link/);
+  assert.match(appJs, /segExclude/);
+  assert.match(css, /\.seg-card\.has-link/);
+  assert.match(css, /\.seg-plat/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js"/);
   assert.match(html, /src="\/shared\/threadText\.js"/);

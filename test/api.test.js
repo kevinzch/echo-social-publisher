@@ -374,8 +374,7 @@ test('写作台 compose：空内容 / 无账号 报错', async (t) => {
   assert.match(empty.data.error, /内容为空/);
 });
 
-test('已连接账号但未指定目标账号：拒绝发布（不得默认群发）', async (t) => {
-  const { base, app } = await startTestApp();
+test('已连接账号但未指定目标账号：拒绝发布（不得默认群发）', async (t) => {  const { base, app } = await startTestApp();
   t.after(() => app.server.close());
   await seedAccount(app, 'x:1', 'x');
   await seedAccount(app, 'threads:1', 'threads');
@@ -394,6 +393,46 @@ test('已连接账号但未指定目标账号：拒绝发布（不得默认群�
   assert.match(sched.data.error, /未指定目标账号/);
 
   // 队列里不应产生任何记录
+  const posts = await req(base, 'GET', '/api/posts');
+  assert.equal(posts.data.posts.length, 0);
+});
+
+test('分段平台开关：exclude 的分段不发给对应平台', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+  await seedAccount(app, 'threads:1', 'threads');
+
+  const at = new Date(Date.now() + 3600_000).toISOString();
+  const r = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [
+      { text: '第一段', media: [], exclude: [] },
+      { text: 'https://example.com/link', media: [], exclude: ['x'] },
+      { text: '第三段', media: [], exclude: [] }
+    ],
+    accountIds: ['x:1', 'threads:1'],
+    scheduledAt: at
+  });
+  assert.equal(r.status, 200);
+  const xPost = r.data.posts.find((p) => p.platform === 'x');
+  const thPost = r.data.posts.find((p) => p.platform === 'threads');
+  assert.ok(xPost && thPost);
+  assert.equal(xPost.segmentsCount, 2, 'X 应只发 2 段（带链接段被排除）');
+  assert.equal(thPost.segmentsCount, 3, 'Threads 应发全部 3 段');
+});
+
+test('分段平台开关：该平台全部分段被排除时拒绝发布', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const r = await req(base, 'POST', '/api/compose/publish', {
+    segments: [{ text: '只有链接', media: [], exclude: ['x'] }],
+    accountIds: ['x:1']
+  });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /没有可发布的分段/);
+
   const posts = await req(base, 'GET', '/api/posts');
   assert.equal(posts.data.posts.length, 0);
 });
