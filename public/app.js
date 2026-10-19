@@ -83,6 +83,7 @@ var state = {
   selectedAccounts: new Set(),
   segMedia: [],          // [[mediaId, ...], ...] 与分段一一对应
   segExclude: [],        // [['x'], ...] 该分段不发布的平台列表
+  segManual: [],         // [{x:true}, ...] 用户手动设置过平台开关的分段（不再自动套用链接默认）
   activeSeg: 0,
   showPreview: false,
   publishing: false,
@@ -203,11 +204,56 @@ function syncSegMedia() {
   var ta = $('#composer-text');
   if (!ta) return;
   var texts = EchoThreadText.splitSegments(ta.value);
-  if (!texts.length) { state.segMedia = []; state.segExclude = []; return; }
+  if (!texts.length) { state.segMedia = []; state.segExclude = []; state.segManual = []; return; }
+  // 分段数量变化时重置手动标记（索引会变）
+  if (state.segManual.length !== texts.length) {
+    state.segManual = texts.map(function () { return {}; });
+  }
   while (state.segMedia.length < texts.length) state.segMedia.push([]);
   if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
   while (state.segExclude.length < texts.length) state.segExclude.push([]);
   if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
+
+  // 含链接段默认自动取消 X（用户手动改过的段不覆盖）
+  texts.forEach(function (t, i) {
+    var manual = state.segManual[i] || (state.segManual[i] = {});
+    if (manual.x) return;
+    var ex = state.segExclude[i] || (state.segExclude[i] = []);
+    var hasLink = LINK_RE.test(t);
+    var has = ex.indexOf('x') !== -1;
+    if (hasLink && !has) ex.push('x');
+    else if (!hasLink && has) state.segExclude[i] = ex.filter(function (p) { return p !== 'x'; });
+  });
+}
+
+/** 主开关：把某平台的勾选状态应用到全部分段（不写手动标记，链接默认仍可在后续输入时生效） */
+function applyPlatformToAll(plat, on) {
+  var ta = $('#composer-text');
+  if (!ta) return;
+  var texts = EchoThreadText.splitSegments(ta.value);
+  for (var i = 0; i < texts.length; i++) {
+    var ex = state.segExclude[i] || (state.segExclude[i] = []);
+    if (on) state.segExclude[i] = ex.filter(function (p) { return p !== plat; });
+    else if (ex.indexOf(plat) === -1) ex.push(plat);
+  }
+}
+
+/** 目标账号复选框状态 = 账号是否选中 + 该平台分段是否被部分/全部排除 */
+function updateAccountCheckboxStates() {
+  var ta = $('#composer-text');
+  var texts = ta ? EchoThreadText.splitSegments(ta.value) : [];
+  var n = texts.length;
+  $$('.acct-check').forEach(function (c) {
+    var acc = state.accounts.find(function (a) { return a.id === c.value; });
+    if (!acc) return;
+    var excluded = 0;
+    for (var i = 0; i < n; i++) {
+      if ((state.segExclude[i] || []).indexOf(acc.platform) !== -1) excluded++;
+    }
+    var selected = state.selectedAccounts.has(acc.id);
+    c.checked = selected;
+    c.indeterminate = selected && excluded > 0;
+  });
 }
 
 /** 光标所在分段索引（按分隔符计数，越界收敛到合法范围） */
@@ -333,6 +379,7 @@ function renderSegments() {
     html += '</div>';
   });
   box.innerHTML = html;
+  updateAccountCheckboxStates();
 }
 
 /* ---------- 编辑器：媒体上传 ---------- */
@@ -436,6 +483,8 @@ function renderComposer() {
       ta.value = EchoThreadText.joinSegments(draft.segments.map(function (s) { return s.text; }));
       state.segMedia = draft.segments.map(function (s) { return (s.media || []).slice(); });
       state.segExclude = draft.segments.map(function (s) { return (s.exclude || []).slice(); });
+      // 草稿中的平台开关视为用户已确定，不再被"含链接默认"覆盖
+      state.segManual = draft.segments.map(function () { return { x: true }; });
       state.selectedAccounts = new Set(draft.accountIds || []);
       $$('.acct-check').forEach(function (c) { c.checked = state.selectedAccounts.has(c.value); });
     }
@@ -504,6 +553,16 @@ function renderComposer() {
     c.addEventListener('change', function () {
       if (c.checked) state.selectedAccounts.add(c.value);
       else state.selectedAccounts.delete(c.value);
+      // 主开关：勾选/取消该平台时覆盖所有分段卡片的平台状态
+      var acc = state.accounts.find(function (a) { return a.id === c.value; });
+      if (acc) {
+        var anyOn = state.accounts.some(function (a) {
+          return a.platform === acc.platform && state.selectedAccounts.has(a.id);
+        });
+        applyPlatformToAll(acc.platform, anyOn);
+      }
+      renderSegments();
+      updateAccountCheckboxStates();
     });
   });
 
@@ -622,6 +681,7 @@ async function afterComposeDone() {
   if (ta) ta.value = '';
   state.segMedia = [];
   state.segExclude = [];
+  state.segManual = [];
   state.showPreview = false;
   try { localStorage.removeItem(LS_KEY); } catch (e) { }
   if (state.draftId) {
@@ -934,12 +994,15 @@ function handleGlobalChange(ev) {
   var seg = parseInt(el.getAttribute('data-seg'), 10) || 0;
   var plat = el.getAttribute('data-seg-plat');
   var list = state.segExclude[seg] || (state.segExclude[seg] = []);
+  // 标记为手动设置，后续输入不再套用"含链接默认取消 X"
+  (state.segManual[seg] = state.segManual[seg] || {})[plat] = true;
   if (el.checked) {
     state.segExclude[seg] = list.filter(function (p) { return p !== plat; });
   } else if (list.indexOf(plat) === -1) {
     list.push(plat);
   }
   renderSegments();
+  updateAccountCheckboxStates();
   if (state.showPreview) renderPreview();
 }
 

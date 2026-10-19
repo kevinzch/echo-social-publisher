@@ -85,6 +85,21 @@ test('分段级平台开关与含链接高亮', () => {
   assert.match(css, /\.seg-plat/);
 });
 
+test('目标账号主开关与分段卡片联动', () => {
+  // 主开关：勾选/取消平台时覆盖所有分段
+  assert.match(appJs, /function applyPlatformToAll/);
+  assert.match(appJs, /applyPlatformToAll\(acc\.platform, anyOn\)/);
+  // 分段被部分取消时，目标账号复选框显示部分勾选
+  assert.match(appJs, /function updateAccountCheckboxStates/);
+  assert.match(appJs, /c\.indeterminate = selected && excluded > 0/);
+  // 含链接段默认自动取消 X（用户手动改过的段不覆盖）
+  assert.match(appJs, /function syncSegMedia/);
+  assert.match(appJs, /manual\.x/);
+  assert.match(appJs, /hasLink && !has/);
+  // 初始不勾选任何目标账号
+  assert.match(appJs, /selectedAccounts: new Set\(\)/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js"/);
   assert.match(html, /src="\/shared\/threadText\.js"/);
