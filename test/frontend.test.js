@@ -95,7 +95,7 @@ test('目标账号主开关与分段卡片联动', () => {
   // 含链接段默认自动取消 X（用户手动改过的段不覆盖）
   assert.match(appJs, /function syncSegMedia/);
   assert.match(appJs, /manual\.x/);
-  assert.match(appJs, /hasLink && !has/);
+  assert.match(appJs, /LINK_RE\.test\(t\) && ex\.indexOf\('x'\) === -1/);
   // 初始不勾选任何目标账号
   assert.match(appJs, /selectedAccounts: new Set\(\)/);
 });
@@ -144,6 +144,22 @@ test('Bluesky / Mastodon 图标与凭据连接表单', () => {
   assert.match(appJs, /platform: 'mastodon'/);
   assert.match(css, /\.plt\.bluesky/);
   assert.match(css, /\.plt\.mastodon/);
+});
+
+test('写作台始终展示全部平台，分段开关默认不勾选', () => {
+  // 平台清单来自配置（4 个平台），不按"已连接账号"过滤
+  assert.match(appJs, /function platformIds\(\)/);
+  assert.match(appJs, /function visiblePlatforms\(\)\s*\{\s*return platformIds\(\);/);
+  // 目标账号区：未连接平台给出入口
+  assert.match(appJs, /acct-empty/);
+  assert.match(appJs, /未连接 /);
+  // 新分段默认排除所有平台（即不勾选）；已选账号时跟随账号
+  assert.match(appJs, /function defaultSegmentExclude/);
+  assert.match(appJs, /state\.segExclude\.push\(defaultSegmentExclude\(\)\)/);
+  // 未连接平台的开关禁用
+  assert.match(appJs, /seg-plat.*no-acct/);
+  assert.match(appJs, /hasAccount \? '' : ' disabled'/);
+  assert.match(css, /\.seg-plat\.no-acct/);
 });
 
 test('共享库与页面骨架被正确引用', () => {

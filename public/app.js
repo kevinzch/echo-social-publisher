@@ -203,7 +203,8 @@ function currentSegments() {
   // 分段数量变化时对齐媒体/平台开关数组
   while (state.segMedia.length < texts.length) state.segMedia.push([]);
   if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
-  while (state.segExclude.length < texts.length) state.segExclude.push([]);
+  // 新分段默认所有平台都不勾选（与"目标账号默认不勾选"保持一致）
+  while (state.segExclude.length < texts.length) state.segExclude.push(defaultSegmentExclude());
   if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
   return texts.map(function (t, i) {
     return {
@@ -226,18 +227,15 @@ function syncSegMedia() {
   }
   while (state.segMedia.length < texts.length) state.segMedia.push([]);
   if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
-  while (state.segExclude.length < texts.length) state.segExclude.push([]);
+  while (state.segExclude.length < texts.length) state.segExclude.push(defaultSegmentExclude());
   if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
 
-  // 含链接段默认自动取消 X（用户手动改过的段不覆盖）
+  // 含链接段默认自动取消 X（仅"新增链接"时生效；默认本就未勾选，不自动勾回）
   texts.forEach(function (t, i) {
     var manual = state.segManual[i] || (state.segManual[i] = {});
     if (manual.x) return;
     var ex = state.segExclude[i] || (state.segExclude[i] = []);
-    var hasLink = LINK_RE.test(t);
-    var has = ex.indexOf('x') !== -1;
-    if (hasLink && !has) ex.push('x');
-    else if (!hasLink && has) state.segExclude[i] = ex.filter(function (p) { return p !== 'x'; });
+    if (LINK_RE.test(t) && ex.indexOf('x') === -1) ex.push('x');
   });
 }
 
@@ -331,14 +329,20 @@ function editorPlatformChips(text) {
 
 var LINK_RE = /(https?:\/\/|www\.)\S+/i;
 
-/** 当前显示平台开关的平台（跟随已选目标账号；未选则用全部已连接账号） */
+/** 所有已配置平台（写作台始终展示全部平台，未连接的给出入口） */
+function platformIds() {
+  return (state.config.platforms || []).map(function (p) { return p.id; });
+}
+
 function visiblePlatforms() {
-  var ids = [];
-  var targets = targetAccounts();
-  var src = targets.length ? targets : state.accounts;
-  src.forEach(function (a) { if (ids.indexOf(a.platform) === -1) ids.push(a.platform); });
-  if (!ids.length) ids = (state.config.platforms || []).map(function (p) { return p.id; });
-  return ids;
+  return platformIds();
+}
+
+/** 新分段的默认平台状态：跟随当前已选目标账号；未选账号则全部不勾选 */
+function defaultSegmentExclude() {
+  var on = {};
+  targetAccounts().forEach(function (a) { on[a.platform] = true; });
+  return platformIds().filter(function (pid) { return !on[pid]; });
 }
 
 function renderSegments() {
@@ -350,6 +354,8 @@ function renderSegments() {
     return;
   }
   var plats = visiblePlatforms();
+  var connectedPlats = {};
+  state.accounts.forEach(function (a) { connectedPlats[a.platform] = true; });
   var html = '';
   segments.forEach(function (seg, i) {
     var over = false;
@@ -361,7 +367,12 @@ function renderSegments() {
     });
     var hasLink = LINK_RE.test(seg.text);
     var excluded = seg.exclude || [];
-    var allExcluded = plats.length > 0 && plats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
+    // 仅当"已选目标账号"且该段对所有已选平台都被排除时，才置灰提示
+    var selectedPlats = [];
+    targetAccounts().forEach(function (a) {
+      if (selectedPlats.indexOf(a.platform) === -1) selectedPlats.push(a.platform);
+    });
+    var allExcluded = selectedPlats.length > 0 && selectedPlats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
     var cls = 'seg-card' + (over ? ' over' : '') + (hasLink ? ' has-link' : '') + (allExcluded ? ' muted-card' : '');
     html += '<div class="' + cls + '" data-seg="' + i + '">' +
       '<div class="seg-head"><span class="seg-no">' + (i + 1) + '</span>' +
@@ -373,8 +384,11 @@ function renderSegments() {
     plats.forEach(function (pid) {
       var p = (state.config.platforms || []).find(function (x) { return x.id === pid; });
       var on = excluded.indexOf(pid) === -1;
-      html += '<label class="seg-plat' + (on ? '' : ' off') + '">' +
-        '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') + '>' +
+      var hasAccount = !!connectedPlats[pid];
+      html += '<label class="seg-plat' + (on ? '' : ' off') + (hasAccount ? '' : ' no-acct') + '"' +
+        (hasAccount ? '' : ' title="未连接该平台账号，发布时不会发送"') + '>' +
+        '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') +
+        (hasAccount ? '' : ' disabled') + '>' +
         '<span class="plt ' + esc(pid) + '">' + platformIcon(pid, 12) + '</span></label>';
     });
     html += '</div>';
@@ -438,16 +452,21 @@ function draftBodyFromEditor() {
 function renderComposer() {
   var view = $('#view');
   var accountsHtml = '';
-  if (!state.accounts.length) {
-    accountsHtml = '<div class="muted small">尚未连接账号。<a href="#/accounts">去连接 X / Threads</a>（连接后即可发布）。</div>';
-  } else {
-    state.accounts.forEach(function (a) {
+  (state.config.platforms || []).forEach(function (p) {
+    var list = state.accounts.filter(function (a) { return a.platform === p.id; });
+    if (!list.length) {
+      accountsHtml += '<div class="acct-empty"><span class="plt ' + esc(p.id) + '">' + platformIcon(p.id, 12) + '</span>' +
+        '<span class="small muted">未连接 ' + esc(p.name.split(' ')[0]) + '</span>' +
+        '<a class="small" href="#/accounts" style="margin-left:auto">去连接</a></div>';
+      return;
+    }
+    list.forEach(function (a) {
       var checked = state.selectedAccounts.has(a.id) ? ' checked' : '';
       accountsHtml += '<label><input type="checkbox" class="acct-check" value="' + esc(a.id) + '"' + checked + '>' +
         '<span class="plt ' + esc(a.platform) + '">' + platformIcon(a.platform, 12) + '</span>' +
         '<span>' + esc(a.displayName || a.username) + '</span></label>';
     });
-  }
+  });
 
   var limitsHtml = (state.config.platforms || []).map(function (p) {
     return '<div class="small muted" style="margin:2px 0"><strong>' + esc(p.name.split(' ')[0]) + '</strong>：' + esc(p.limits.note) + '</div>';
@@ -497,7 +516,9 @@ function renderComposer() {
     if (draft) {
       ta.value = EchoThreadText.joinSegments(draft.segments.map(function (s) { return s.text; }));
       state.segMedia = draft.segments.map(function (s) { return (s.media || []).slice(); });
-      state.segExclude = draft.segments.map(function (s) { return (s.exclude || []).slice(); });
+      state.segExclude = draft.segments.map(function (s) {
+        return Array.isArray(s.exclude) ? s.exclude.slice() : defaultSegmentExclude();
+      });
       // 草稿中的平台开关视为用户已确定，不再被"含链接默认"覆盖
       state.segManual = draft.segments.map(function () { return { x: true }; });
       state.selectedAccounts = new Set(draft.accountIds || []);
