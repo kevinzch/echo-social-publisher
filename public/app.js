@@ -815,14 +815,18 @@ function renderPreview() {
     var user = acct ? acct.username : 'me';
     // 按分段平台开关过滤：被排除的段不在此平台预览
     var visible = segments.filter(function (s) { return (s.exclude || []).indexOf(pid) === -1; });
+    // 每个平台独立一列，避免不同平台的帖子在 flex 中混排
+    html += '<div class="preview-col">' +
+      '<div class="preview-col-head">' + platformIcon(pid, 14) + '<span>' + esc(p.name.split(' ')[0]) + ' · @' + esc(user) + '</span></div>';
     if (!visible.length) {
-      html += '<div class="empty" style="width:100%">该平台没有可发布的分段（已被平台开关排除）</div>';
-      return;
+      html += '<div class="empty">该平台没有可发布的分段（已被平台开关排除）</div>';
+    } else {
+      visible.forEach(function (seg, i) {
+        html += mockPost(p, name, user, seg, limits(pid));
+        if (i < visible.length - 1) html += '<div class="mock-thread-arrow">↓</div>';
+      });
     }
-    visible.forEach(function (seg, i) {
-      html += mockPost(p, name, user, seg, limits(pid));
-      if (i < visible.length - 1) html += '<div class="mock-thread-arrow" style="width:100%">↓</div>';
-    });
+    html += '</div>';
   });
   html += '</div></div>';
   wrap.innerHTML = html;

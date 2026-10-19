@@ -128,6 +128,13 @@ test('计数 chip 图标与文字同行（不换行）', () => {
   assert.match(chipBlock, /align-items:\s*center/);
 });
 
+test('预览按平台分列渲染（不混排）', () => {
+  assert.match(appJs, /class="preview-col"/);
+  assert.match(appJs, /preview-col-head/);
+  assert.match(css, /\.preview-col\s*\{[^}]*flex-direction:\s*column/);
+  assert.match(css, /\.mock\s*\{[^}]*width:\s*100%/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
