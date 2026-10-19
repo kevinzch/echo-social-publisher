@@ -162,4 +162,77 @@ A：`Restart-Service cloudflared`；服务模式下确认读取的是正确的�
 A：把 `config.yml` + 凭据 JSON 复制到新机器，`cloudflared service install` 即可；DNS 记录不用动。NAS 上也可以用 Docker 跑 cloudflared，挂载同一份配置。
 
 **Q：隧道一直开着安全吗？**
-A：Cloudflare 只转发到 `127.0.0.1:8787`，不暴露其他端口。Echo 目前没有登录鉴权（本地单人工具），公网可达后**建议尽快加访问密码**——这是下一步要做的事。
+A：Cloudflare 只转发到 `127.0.0.1:8787`，不暴露其他端口。**必须配合 Cloudflare Access 使用**（见第 10 节）——否则任何知道域名的人都能操作你的账号。
+
+---
+
+## 10. 访问保护：Cloudflare Access（邮箱验证码）
+
+公网可达后必须加鉴权。用 Cloudflare Access 的 **One-time PIN（邮箱验证码）**，零代码、免费（50 用户以内）。
+
+### 10.1 添加 One-time PIN 登录方式
+
+> ⚠️ 新版 Zero Trust 组织默认使用「Cloudflare 账号」作为登录方式，**OTP 不再自动添加**。
+
+1. Zero Trust → **Integrations → Identity providers**
+2. **Add new identity provider** → 选 **One-time PIN** → 保存
+
+### 10.2 创建 Access 应用
+
+1. Zero Trust → **Access controls → Applications → Create new application → Self-hosted and private**
+2. **Public hostname**：Subdomain `echo` + Domain `digitalgarden.party`（Path 留空）
+3. **Access policies**：新建策略
+   - Action：**Allow**
+   - Include：**Emails** → 你自己的邮箱
+   - **Policy session duration：1 month**（这就是"记住我 30 天"）
+4. **Authentication**：保持「Accept all available identity providers」开启（OTP 加入后会出现在登录页）；若只想显示验证码，可关闭此项并只选 One-time PIN
+5. 保存
+
+> 会话时长优先级：**Policy > Application > Global**。policy 级设置会覆盖另外两者，所以只需在策略里设 1 month。
+> Application 级时长位置：Applications → 选择应用 → **Configure → Overview → Session Duration**。
+
+### 10.3 放行图片路径（否则 Threads 带图帖失败）
+
+Meta 的服务器抓取图片时不带登录 Cookie，必须放行 `/media/*`：
+
+1. 再建一个 Self-hosted 应用
+2. Hostname 同上，**Path 填 `media`**
+3. Policy：Action = **Bypass**，Include = **Everyone**
+4. 保存（Bypass 策略优先级最高）
+
+### 10.4 验证
+
+```powershell
+# 首页应 302 跳转到 <team>.cloudflareaccess.com
+curl.exe -I https://echo.digitalgarden.party
+
+# 媒体文件应 200（Meta 抓图依赖）
+curl.exe -I https://echo.digitalgarden.party/media/<任一图片>
+```
+
+浏览器无痕窗口访问 → 输入白名单邮箱 → 收 6 位验证码 → 登录；非白名单邮箱收不到验证码（且页面提示一致，不泄露白名单信息）。
+
+### 10.5 可选加固
+
+在 cloudflared 隧道设置中开启 **Protect with Access**，让源站再校验一次 Access 令牌，防止绕过 Cloudflare 边缘直连隧道。
+
+---
+
+## 11. 开机自启（Echo + 隧道）
+
+隧道和 Echo 都需要开机自启，否则重启后公网会 502。
+
+`C:\Users\shibun.tei\cloudflared\start-tunnel.bat`（隧道）已生成；再为 Echo 建一个 `start-echo.bat`：
+
+```bat
+@echo off
+cd /d "C:\Users\shibun.tei\WorkBuddy AI\Echo"
+node server/main.js
+```
+
+然后注册两个登录时任务：
+
+```powershell
+schtasks /create /tn "Echo Server" /tr "C:\Users\shibun.tei\WorkBuddy AI\Echo\start-echo.bat" /sc onlogon
+schtasks /create /tn "Echo Tunnel" /tr "C:\Users\shibun.tei\cloudflared\start-tunnel.bat" /sc onlogon
+```
