@@ -39,7 +39,7 @@ function createApp(opt) {
   const publicDir = path.join(cfg.rootDir, 'public');
   const sharedDir = path.join(cfg.rootDir, 'shared');
 
-  async function handleStatic(res, pathname) {
+  async function handleStatic(req, res, pathname) {
     let file = null;
     if (pathname === '/' || pathname === '/index.html') file = path.join(publicDir, 'index.html');
     else if (pathname === '/app.js') file = path.join(publicDir, 'app.js');
@@ -52,18 +52,18 @@ function createApp(opt) {
       const id = full.replace(/\.[^.]+$/, '');
       const record = media.get(id);
       if (record) {
-        const ok = await httpUtil.serveStatic(res, media.pathOf(record));
+        const ok = await httpUtil.serveStatic(req, res, media.pathOf(record));
         if (ok) return true;
       }
       return false;
     }
     if (file) {
-      const ok = await httpUtil.serveStatic(res, file);
+      const ok = await httpUtil.serveStatic(req, res, file);
       if (ok) return true;
     }
     // SPA fallback：无扩展名、且非 API/回调 的路径回落到 index.html
     if (pathname.indexOf('.') === -1 && pathname.indexOf('/api/') !== 0 && pathname.indexOf('/auth/') !== 0) {
-      const ok = await httpUtil.serveStatic(res, path.join(publicDir, 'index.html'));
+      const ok = await httpUtil.serveStatic(req, res, path.join(publicDir, 'index.html'));
       if (ok) return true;
     }
     return false;
@@ -83,7 +83,7 @@ function createApp(opt) {
         if (params) { await r.handler(req, res, params); return; }
       }
       if (req.method === 'GET' || req.method === 'HEAD') {
-        const ok = await handleStatic(res, pathname);
+        const ok = await handleStatic(req, res, pathname);
         if (ok) return;
       }
       httpUtil.sendError(res, 404, 'not found: ' + pathname);

@@ -236,3 +236,16 @@ node server/main.js
 schtasks /create /tn "Echo Server" /tr "C:\Users\shibun.tei\WorkBuddy AI\Echo\start-echo.bat" /sc onlogon
 schtasks /create /tn "Echo Tunnel" /tr "C:\Users\shibun.tei\cloudflared\start-tunnel.bat" /sc onlogon
 ```
+
+---
+
+## 12. 更新后公网仍是旧版？（缓存）
+
+本地和公网是**同一个进程**（隧道只是转发到 `127.0.0.1:8787`），出现"本地新、公网旧"一定是缓存：
+
+1. **Cloudflare 默认的 Browser Cache TTL 是 4 小时**，会覆盖源站的缓存头 → 浏览器长时间持有旧的 `app.js`。
+   建议：Cloudflare → **Caching → Configuration → Browser Cache TTL → Respect Existing Headers**。
+2. 更新后清一次边缘缓存：**Caching → Configuration → Purge Everything**。
+3. 浏览器端 `Ctrl+Shift+R` 硬刷新（或清站点数据）。
+
+Echo 已把 HTML/JS/CSS 改为 `Cache-Control: no-cache` + `ETag`（命中返回 304），图片等媒体仍长缓存 1 天。配合第 1 步即可做到"更新即生效"。

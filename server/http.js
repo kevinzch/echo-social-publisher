@@ -76,15 +76,27 @@ async function readJsonBody(req, opt) {
   return body;
 }
 
-function serveStatic(res, filePath) {
+function serveStatic(req, res, filePath) {
   return new Promise((resolve) => {
     fs.stat(filePath, (err, stat) => {
       if (err || !stat.isFile()) { resolve(false); return; }
       const ext = path.extname(filePath).toLowerCase();
-      res.writeHead(200, {
+      // HTML/JS/CSS 每次校验（配合 ETag 命中 304），避免 Cloudflare 默认
+      // Browser Cache TTL（4 小时）让浏览器长期缓存旧版前端
+      const revalidate = ['.html', '.js', '.css', '.json'].indexOf(ext) !== -1;
+      const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+      const headers = {
         'Content-Type': MIME[ext] || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=300'
-      });
+        'Cache-Control': revalidate ? 'no-cache' : 'public, max-age=86400',
+        'ETag': etag
+      };
+      if (req && req.headers && req.headers['if-none-match'] === etag) {
+        res.writeHead(304, headers);
+        res.end();
+        resolve(true);
+        return;
+      }
+      res.writeHead(200, headers);
       fs.createReadStream(filePath).pipe(res);
       res.on('finish', () => resolve(true));
     });

@@ -437,6 +437,30 @@ test('分段平台开关：该平台全部分段被排除时拒绝发布', async
   assert.equal(posts.data.posts.length, 0);
 });
 
+test('静态资源缓存：JS/CSS 每次校验（ETag 304），媒体长缓存', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  // app.js：no-cache + ETag
+  const first = await fetch(base + '/app.js');
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('cache-control'), 'no-cache');
+  const etag = first.headers.get('etag');
+  assert.ok(etag, '应返回 ETag');
+
+  // 带 If-None-Match 再请求 → 304
+  const second = await fetch(base + '/app.js', { headers: { 'If-None-Match': etag } });
+  assert.equal(second.status, 304);
+
+  // 上传一张图片，验证媒体为长缓存
+  const up = await req(base, 'POST', '/api/media', pngRecord());
+  assert.equal(up.status, 200);
+  const mediaPath = new URL(up.data.media.url).pathname;
+  const img = await fetch(base + mediaPath);
+  assert.equal(img.status, 200);
+  assert.match(img.headers.get('cache-control'), /max-age=86400/);
+});
+
 test('分段把所有平台都取消：定时发布被拒绝并指出段号', async (t) => {
   const { base, app } = await startTestApp();
   t.after(() => app.server.close());
