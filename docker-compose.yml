@@ -1,0 +1,38 @@
+# Echo · NAS 部署编排（群晖 Container Manager / QNAP Container Station / 通用 docker compose）
+# 迁移步骤见 docs/MIGRATE_TO_NAS.md
+#
+# 关键点：
+#   1. echo 与 cloudflared 在同一个 compose 网络里，隧道源站写 http://echo:8787（不是 127.0.0.1）
+#   2. restart: unless-stopped —— 调度器必须 7×24 常驻，NAS 重启后自动拉起
+#   3. 凭证走 env_file 注入，不打进镜像
+
+services:
+  echo:
+    build: .
+    image: echo-local:latest
+    container_name: echo
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Kuala_Lumpur     # 与你所在地一致（UTC+8；用 Asia/Shanghai 也一样）
+      PORT: "8787"
+      ECHO_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    ports:
+      # 局域网直连用；只想走公网隧道可删掉这两行
+      - "8787:8787"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: echo-tunnel
+    restart: unless-stopped
+    # config.yml 里 service 必须指向 http://echo:8787
+    command: tunnel --no-autoupdate --config /home/nonroot/.cloudflared/config.yml run echo
+    volumes:
+      # 放 config.yml + <TUNNEL_ID>.json（从旧机器的 ~/.cloudflared 复制过来）
+      - ./cloudflared:/home/nonroot/.cloudflared:ro
+    depends_on:
+      echo:
+        condition: service_healthy

@@ -1,0 +1,15 @@
+# 复制本文件为同目录下的 config.yml，替换 <TUNNEL_ID> 后使用。
+# 凭据文件也要放在本目录：cloudflared/<TUNNEL_ID>.json
+# 两个文件的权限建议 chmod 644（容器内以非 root 用户 nonroot 读取）。
+#
+# 与旧机器上 ~/.cloudflared/config.yml 的唯一区别：
+#   service 从 http://127.0.0.1:8787 改成 http://echo:8787（容器名，走 compose 内部网络）
+
+tunnel: <TUNNEL_ID>
+credentials-file: /home/nonroot/.cloudflared/<TUNNEL_ID>.json
+no-autoupdate: true
+
+ingress:
+  - hostname: echo.digitalgarden.party
+    service: http://echo:8787
+  - service: http_status:404

@@ -38,7 +38,7 @@ npm test
 1. **连接账号**：「账号」页 → 连接 X / Threads（首次需在平台侧授权）。
 2. **写作台**：写正文 → 需要长贴文就点「手动分段」→ 给某段点 `+` 传图 → 右侧勾选目标账号 → 保存草稿 / 定时 / 立即发布。
 3. **Threads 带图/授权**：Threads API 要求**回调和图片都必须是 HTTPS 公网地址**（Meta 强制）。本机直连只能纯文字发 X；Threads 授权与带图发布需先跑隧道（如 `cloudflared tunnel --url http://127.0.0.1:8787`），把地址配到「设置 → Threads 图片公网地址」和 `.env` 的 `THREADS_REDIRECT_URI`，并在 Meta 后台登记 `https://<隧道域名>/auth/threads/callback`。详见 docs/API_APPLY_GUIDE.md §2.4。
-4. **定时可靠性**：调度器在 Echo 进程内运行——**关机/退出期间到期的贴文，会在下次启动时自动补投**。需要 7×24 常驻时可把本目录部署到一台服务器（改 `PORT` 并在两平台后台追加对应回调域名）。
+4. **定时可靠性**：调度器在 Echo 进程内运行——**关机/退出期间到期的贴文，会在下次启动时自动补投**。需要 7×24 常驻时建议部署到 NAS / 服务器：仓库已自带 `Dockerfile` + `docker-compose.yml`（含 cloudflared 隧道），步骤见 **[docs/MIGRATE_TO_NAS.md](docs/MIGRATE_TO_NAS.md)**。
 
 ## 目录结构
 

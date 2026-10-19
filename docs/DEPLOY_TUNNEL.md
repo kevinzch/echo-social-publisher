@@ -159,7 +159,7 @@ A：域名还没在 Cloudflare 激活（NS 未生效），等 Active 后再执�
 A：`Restart-Service cloudflared`；服务模式下确认读取的是正确的配置文件路径。
 
 **Q：以后换机器（比如迁到 NAS）怎么办？**
-A：把 `config.yml` + 凭据 JSON 复制到新机器，`cloudflared service install` 即可；DNS 记录不用动。NAS 上也可以用 Docker 跑 cloudflared，挂载同一份配置。
+A：把 `config.yml` + 凭据 JSON 复制到新机器，`cloudflared service install` 即可；DNS 记录不用动。NAS 上也可以用 Docker 跑 cloudflared，挂载同一份配置——但 `service` 要改成容器内可达的地址（如 `http://echo:8787`）。完整步骤见 **[MIGRATE_TO_NAS.md](MIGRATE_TO_NAS.md)**，仓库已自带 `docker-compose.yml`。
 
 **Q：隧道一直开着安全吗？**
 A：Cloudflare 只转发到 `127.0.0.1:8787`，不暴露其他端口。**必须配合 Cloudflare Access 使用**（见第 10 节）——否则任何知道域名的人都能操作你的账号。

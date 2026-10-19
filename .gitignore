@@ -4,3 +4,6 @@ data/
 *.log
 .DS_Store
 .workbuddy-ai/
+# 隧道凭据（含 tunnel secret，绝不入库）
+cloudflared/config.yml
+cloudflared/*.json

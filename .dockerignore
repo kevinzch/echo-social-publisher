@@ -1,0 +1,15 @@
+# 绝不能打进镜像的：凭证与运行时数据
+.env
+data/
+.git/
+.gitignore
+.workbuddy-ai/
+node_modules/
+*.log
+.DS_Store
+
+# 与运行无关
+test/
+docs/
+start-echo.bat
+README.md
