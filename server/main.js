@@ -1,5 +1,5 @@
 /**
- * server/index.js — 入口：HTTP 服务 + 静态资源 + 调度器
+ * server/main.js — 入口：HTTP 服务 + 静态资源 + 调度器
  */
 'use strict';
 const http = require('http');

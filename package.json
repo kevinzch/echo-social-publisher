@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "仿 Typefully 的个人贴文发布平台（X / Threads，支持分段、定时、本地草稿箱）",
-  "main": "server/index.js",
+  "main": "server/main.js",
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node server/main.js",
     "test": "node --test"
   },
   "engines": {
