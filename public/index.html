@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Echo · 个人贴文发布台</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v={{BUILD}}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
 </head>
 <body>
@@ -25,6 +25,7 @@
       </nav>
       <div class="sidebar-foot">
         <div class="sched-state" id="sched-state">调度器就绪</div>
+        <div class="build-stamp">build {{BUILD}} · {{BUILD_TIME}}</div>
       </div>
     </aside>
     <main class="main" id="view"><div class="loading">加载中…</div></main>
@@ -44,8 +45,8 @@
     </div>
   </div>
 
-  <script src="/shared/chars.js"></script>
-  <script src="/shared/threadText.js"></script>
-  <script src="/app.js"></script>
+  <script src="/shared/chars.js?v={{BUILD}}"></script>
+  <script src="/shared/threadText.js?v={{BUILD}}"></script>
+  <script src="/app.js?v={{BUILD}}"></script>
 </body>
 </html>

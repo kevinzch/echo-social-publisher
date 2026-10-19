@@ -112,9 +112,11 @@ test('分段未勾选任何平台时阻止发布并提示段号', () => {
 });
 
 test('共享库与页面骨架被正确引用', () => {
-  assert.match(html, /src="\/shared\/chars\.js"/);
-  assert.match(html, /src="\/shared\/threadText\.js"/);
-  assert.match(html, /src="\/app\.js"/);
+  assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
+  assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
+  assert.match(html, /src="\/app\.js\?v=\{\{BUILD\}\}"/);
+  assert.match(html, /styles\.css\?v=\{\{BUILD\}\}/);
+  assert.match(html, /build \{\{BUILD\}\} · \{\{BUILD_TIME\}\}/);
   assert.match(appJs, /EchoChars\.analyze/);
   assert.match(appJs, /EchoThreadText\.splitSegments/);
 });

@@ -437,6 +437,30 @@ test('分段平台开关：该平台全部分段被排除时拒绝发布', async
   assert.equal(posts.data.posts.length, 0);
 });
 
+test('构建版本：首页注入资源版本号与构建标记，带 ETag 可 304', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  const r = await fetch(base + '/');
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  assert.ok(!html.includes('{{BUILD}}'), '占位符应已被替换');
+  const m = html.match(/app\.js\?v=([0-9a-f]{10})/);
+  assert.ok(m, 'app.js 应带 10 位构建哈希');
+  assert.ok(html.includes('build ' + m[1]), '侧栏应显示构建版本');
+  assert.match(html, /build [0-9a-f]{10} · \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+
+  // 带版本号的资源可正常访问（query 不影响路由）
+  const js = await fetch(base + '/app.js?v=' + m[1]);
+  assert.equal(js.status, 200);
+
+  // 首页 ETag 复验
+  const etag = r.headers.get('etag');
+  assert.ok(etag);
+  const second = await fetch(base + '/', { headers: { 'If-None-Match': etag } });
+  assert.equal(second.status, 304);
+});
+
 test('静态资源缓存：JS/CSS 每次校验（ETag 304），媒体长缓存', async (t) => {
   const { base, app } = await startTestApp();
   t.after(() => app.server.close());

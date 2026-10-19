@@ -4,6 +4,8 @@
 'use strict';
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const config = require('./config');
 const { getStore } = require('./store');
 const { AccountService } = require('./auth');
@@ -39,9 +41,58 @@ function createApp(opt) {
   const publicDir = path.join(cfg.rootDir, 'public');
   const sharedDir = path.join(cfg.rootDir, 'shared');
 
+  /** 计算构建指纹：内容哈希 + 最近修改时间（重启后自动更新，用于资源版本号） */
+  function computeBuild() {
+    const files = [
+      path.join(publicDir, 'app.js'),
+      path.join(publicDir, 'styles.css'),
+      path.join(publicDir, 'index.html'),
+      path.join(sharedDir, 'chars.js'),
+      path.join(sharedDir, 'threadText.js')
+    ];
+    const hash = crypto.createHash('sha1');
+    let latest = 0;
+    for (const f of files) {
+      try {
+        const st = fs.statSync(f);
+        hash.update(fs.readFileSync(f));
+        if (st.mtimeMs > latest) latest = st.mtimeMs;
+      } catch { /* 文件缺失时忽略 */ }
+    }
+    const id = hash.digest('hex').slice(0, 10);
+    const d = new Date(latest || Date.now());
+    const p = (n) => String(n).padStart(2, '0');
+    return { id, time: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}` };
+  }
+
+  const build = computeBuild();
+  const indexTemplate = (() => {
+    try { return fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8'); } catch { return ''; }
+  })();
+  const indexHtml = indexTemplate
+    .replace(/\{\{BUILD\}\}/g, build.id)
+    .replace(/\{\{BUILD_TIME\}\}/g, build.time);
+
+  /** 发送已注入版本号的首页（no-cache + ETag，支持 304） */
+  function sendIndexHtml(req, res) {
+    const etag = `W/"build-${build.id}"`;
+    if (req && req.headers && req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { 'Cache-Control': 'no-cache', 'ETag': etag });
+      res.end();
+      return true;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'ETag': etag
+    });
+    res.end(indexHtml);
+    return true;
+  }
+
   async function handleStatic(req, res, pathname) {
     let file = null;
-    if (pathname === '/' || pathname === '/index.html') file = path.join(publicDir, 'index.html');
+    if (pathname === '/' || pathname === '/index.html') return sendIndexHtml(req, res);
     else if (pathname === '/app.js') file = path.join(publicDir, 'app.js');
     else if (pathname === '/styles.css') file = path.join(publicDir, 'styles.css');
     else if (pathname.indexOf('/shared/') === 0) {
@@ -63,8 +114,7 @@ function createApp(opt) {
     }
     // SPA fallback：无扩展名、且非 API/回调 的路径回落到 index.html
     if (pathname.indexOf('.') === -1 && pathname.indexOf('/api/') !== 0 && pathname.indexOf('/auth/') !== 0) {
-      const ok = await httpUtil.serveStatic(req, res, path.join(publicDir, 'index.html'));
-      if (ok) return true;
+      return sendIndexHtml(req, res);
     }
     return false;
   }
