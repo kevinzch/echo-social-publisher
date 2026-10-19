@@ -88,6 +88,17 @@ const config = {
     imageBaseUrl: env('THREADS_IMAGE_BASE_URL', appBaseUrl).replace(/\/+$/, '')
   },
 
+  // Bluesky（AT Protocol）：凭据按账号存储（handle + App Password），无需应用级配置
+  bluesky: {
+    service: env('BLUESKY_SERVICE', 'https://bsky.social'),
+    publicBaseUrl: 'https://bsky.app'
+  },
+
+  // Mastodon：凭据按账号存储（实例地址 + 访问令牌），无需应用级配置
+  mastodon: {
+    defaultInstance: env('MASTODON_DEFAULT_INSTANCE', 'https://mastodon.social')
+  },
+
   // 上传限制（取两平台并集的宽松上限，平台级校验在发布时执行）
   maxUploadBytes: envInt('ECHO_MAX_UPLOAD_BYTES', 8 * 1024 * 1024),
   allowedUploadMimes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],

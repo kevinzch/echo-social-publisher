@@ -8,11 +8,15 @@
 'use strict';
 const XAdapter = require('./platforms/x');
 const ThreadsAdapter = require('./platforms/threads');
+const BlueskyAdapter = require('./platforms/bluesky');
+const MastodonAdapter = require('./platforms/mastodon');
 
 function makeRegistry(config) {
   return {
     x: new XAdapter(config),
-    threads: new ThreadsAdapter(config)
+    threads: new ThreadsAdapter(config),
+    bluesky: new BlueskyAdapter(config),
+    mastodon: new MastodonAdapter(config)
     // weibo: new WeiboAdapter(config),        // ← 未来扩展
     // xiaohongshu: new XiaohongshuAdapter(config)
   };

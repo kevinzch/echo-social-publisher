@@ -55,7 +55,11 @@ test('GET /api/config 返回平台清单与限额', async (t) => {
   t.after(() => app.server.close());
   const r = await req(base, 'GET', '/api/config');
   assert.equal(r.status, 200);
-  assert.equal(r.data.platforms.length, 2);
+  assert.equal(r.data.platforms.length, 4);
+  const bsky = r.data.platforms.find((p) => p.id === 'bluesky');
+  assert.equal(bsky.limits.maxChars, 300);
+  const masto = r.data.platforms.find((p) => p.id === 'mastodon');
+  assert.equal(masto.limits.maxChars, 500);
   const x = r.data.platforms.find((p) => p.id === 'x');
   assert.equal(x.limits.maxChars, 280);
   assert.equal(x.limits.maxImages, 4);
@@ -304,6 +308,75 @@ test('过去时间不能入队', async (t) => {
   });
   assert.equal(r.status, 400);
   assert.match(r.data.error, /已过/);
+});
+
+test('凭据连接：Bluesky handle + App Password 落库', async (t) => {
+  const mock = await startMock((req) => {
+    if (req.path === '/xrpc/com.atproto.server.createSession') {
+      assert.equal(req.json.identifier, 'bob.bsky.social');
+      return { body: { accessJwt: 'a1', refreshJwt: 'r1', did: 'did:plc:bob', handle: 'bob.bsky.social' } };
+    }
+    if (req.path === '/xrpc/app.bsky.actor.getProfile') return { body: { displayName: 'Bob' } };
+    return null;
+  });
+  t.after(() => mock.close());
+
+  const { base, app } = await startTestApp({ bluesky: { service: baseUrlOf(mock) } });
+  t.after(() => app.server.close());
+
+  const r = await req(base, 'POST', '/api/accounts/manual', {
+    platform: 'bluesky',
+    credentials: { identifier: 'bob.bsky.social', password: 'abcd-efgh' }
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.account.platform, 'bluesky');
+  assert.equal(r.data.account.username, 'bob.bsky.social');
+  assert.equal(r.data.account.manual, true);
+
+  const list = await req(base, 'GET', '/api/accounts');
+  assert.equal(list.data.accounts.length, 1);
+  assert.equal(list.data.accounts[0].id, 'bluesky:did:plc:bob');
+});
+
+test('凭据连接：Mastodon 实例 + 令牌落库', async (t) => {
+  const mock = await startMock((req) => {
+    if (req.path === '/api/v1/accounts/verify_credentials') {
+      assert.equal(req.headers.authorization, 'Bearer tok-9');
+      return { body: { id: '77', username: 'carol', acct: 'carol@m.example', display_name: 'Carol' } };
+    }
+    return null;
+  });
+  t.after(() => mock.close());
+
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  const r = await req(base, 'POST', '/api/accounts/manual', {
+    platform: 'mastodon',
+    credentials: { instance: baseUrlOf(mock), token: 'tok-9' }
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.account.platform, 'mastodon');
+  assert.equal(r.data.account.username, 'carol@m.example');
+
+  const list = await req(base, 'GET', '/api/accounts');
+  assert.equal(list.data.accounts[0].id, 'mastodon:77');
+});
+
+test('凭据连接：错误凭据返回 401 且不落库', async (t) => {
+  const mock = await startMock(() => ({ status: 401, body: { message: 'Invalid identifier or password' } }));
+  t.after(() => mock.close());
+
+  const { base, app } = await startTestApp({ bluesky: { service: baseUrlOf(mock) } });
+  t.after(() => app.server.close());
+
+  const r = await req(base, 'POST', '/api/accounts/manual', {
+    platform: 'bluesky',
+    credentials: { identifier: 'x.bsky.social', password: 'wrong' }
+  });
+  assert.equal(r.status, 401);
+  const list = await req(base, 'GET', '/api/accounts');
+  assert.equal(list.data.accounts.length, 0);
 });
 
 test('写作台 compose/schedule：直接入队，不产生草稿', async (t) => {

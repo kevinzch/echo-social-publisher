@@ -120,6 +120,50 @@ class AccountService {
     return this.publicView(account);
   }
 
+  /**
+   * 按凭据连接（Bluesky / Mastodon 等无 OAuth 的平台）
+   * credentials 结构由各平台 connect() 定义：
+   *   bluesky:  { identifier, password }
+   *   mastodon: { instance, token }
+   */
+  async connectWithCredentials(platformId, credentials) {
+    const platform = getPlatform(platformId, this.config);
+    if (!platform) throw Object.assign(new Error(`未知平台: ${platformId}`), { statusCode: 404 });
+    if (typeof platform.connect !== 'function') {
+      throw Object.assign(new Error(`${platform.constructor.name} 不支持凭据连接，请使用 OAuth 授权`), { statusCode: 400 });
+    }
+
+    let result;
+    try {
+      result = await platform.connect(credentials || {});
+    } catch (err) {
+      throw Object.assign(new Error(err.message || '凭据验证失败'), { statusCode: err.statusCode || 401 });
+    }
+    if (!result || !result.externalId || !result.tokens) {
+      throw Object.assign(new Error('凭据验证失败：未获取到账号信息'), { statusCode: 401 });
+    }
+
+    const accountId = `${platformId}:${result.externalId}`;
+    const existing = this.store.accounts.get(accountId);
+    const now = new Date().toISOString();
+    const account = {
+      id: accountId,
+      platform: platformId,
+      externalId: String(result.externalId),
+      username: result.username,
+      displayName: result.displayName || result.username,
+      tokens: result.tokens,
+      manual: true,
+      enabled: true,
+      createdAt: existing ? existing.createdAt : now,
+      updatedAt: now
+    };
+    if (existing) await this.store.accounts.update(accountId, account);
+    else await this.store.accounts.insert(account);
+    await this.store.log('info', 'auth', `凭据连接账号 ${platformId}:${result.username}`);
+    return this.publicView(account);
+  }
+
   publicView(account) {
     return {
       id: account.id,

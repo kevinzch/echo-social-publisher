@@ -176,7 +176,12 @@ function makeRoutes(ctx) {
       handler: async (req, res) => {
         try {
           const body = await readJsonBody(req);
-          const view = await accounts.connectWithManualToken(body.platform, body.token);
+          // Threads 走长期令牌；Bluesky / Mastodon 走平台凭据
+          if (body.platform === 'threads') {
+            const view = await accounts.connectWithManualToken(body.platform, body.token);
+            return sendJson(res, 200, { account: view });
+          }
+          const view = await accounts.connectWithCredentials(body.platform, body.credentials || body);
           sendJson(res, 200, { account: view });
         } catch (err) {
           sendError(res, err.statusCode || 400, err.message);

@@ -135,6 +135,17 @@ test('预览按平台分列渲染（不混排）', () => {
   assert.match(css, /\.mock\s*\{[^}]*width:\s*100%/);
 });
 
+test('Bluesky / Mastodon 图标与凭据连接表单', () => {
+  assert.match(appJs, /bluesky: 'M5\.202 2\.857/);
+  assert.match(appJs, /mastodon: 'M23\.268 5\.313/);
+  assert.match(appJs, /id="btn-connect-bsky"/);
+  assert.match(appJs, /id="btn-connect-masto"/);
+  assert.match(appJs, /platform: 'bluesky'/);
+  assert.match(appJs, /platform: 'mastodon'/);
+  assert.match(css, /\.plt\.bluesky/);
+  assert.match(css, /\.plt\.mastodon/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
