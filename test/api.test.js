@@ -4,7 +4,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createApp } = require('../server/index');
+const { createApp } = require('../server/main');
 const baseConfig = require('../server/config');
 const { tmpDir, pngRecord, startMock, baseUrlOf } = require('./helpers');
 
