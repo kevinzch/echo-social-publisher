@@ -305,3 +305,71 @@ test('过去时间不能入队', async (t) => {
   assert.equal(r.status, 400);
   assert.match(r.data.error, /已过/);
 });
+
+test('写作台 compose/schedule：直接入队，不产生草稿', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const at = new Date(Date.now() + 3600_000).toISOString();
+  const r = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [{ text: '第一段', media: [] }, { text: '第二段', media: [] }],
+    accountIds: ['x:1'],
+    scheduledAt: at
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.posts.length, 1);
+  assert.equal(r.data.posts[0].segmentsCount, 2);
+  assert.equal(r.data.posts[0].status, 'pending');
+
+  // 关键断言：不产生草稿
+  const drafts = await req(base, 'GET', '/api/drafts');
+  assert.equal(drafts.data.drafts.length, 0);
+});
+
+test('写作台 compose/publish：立即发布成功且不产生草稿', async (t) => {
+  const mock = await startMock((r) => {
+    if (r.path === '/2/tweets') return { body: { data: { id: '3001' } } };
+    return null;
+  });
+  t.after(() => mock.close());
+
+  const { base, app } = await startTestApp({
+    x: { ...JSON.parse(JSON.stringify(baseConfig.x)), clientId: 'cid', apiBaseUrl: baseUrlOf(mock), uploadBaseUrl: baseUrlOf(mock) }
+  });
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const r = await req(base, 'POST', '/api/compose/publish', {
+    segments: [{ text: '立即发布内容', media: [] }],
+    accountIds: ['x:1']
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.results.length, 1);
+  assert.equal(r.data.results[0].ok, true);
+  assert.ok(r.data.results[0].urls[0].includes('/status/3001'));
+
+  const drafts = await req(base, 'GET', '/api/drafts');
+  assert.equal(drafts.data.drafts.length, 0, '立即发布不应写入草稿箱');
+});
+
+test('写作台 compose：空内容 / 无账号 报错', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  // 无账号
+  const noAccount = await req(base, 'POST', '/api/compose/publish', {
+    segments: [{ text: 'hi', media: [] }]
+  });
+  assert.equal(noAccount.status, 400);
+  assert.match(noAccount.data.error, /连接/);
+
+  // 空内容
+  await seedAccount(app, 'x:1', 'x');
+  const empty = await req(base, 'POST', '/api/compose/publish', {
+    segments: [{ text: '   ', media: [] }],
+    accountIds: ['x:1']
+  });
+  assert.equal(empty.status, 400);
+  assert.match(empty.data.error, /内容为空/);
+});

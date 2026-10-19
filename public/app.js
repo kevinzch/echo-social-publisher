@@ -84,6 +84,7 @@ var state = {
   segMedia: [],          // [[mediaId, ...], ...] 与分段一一对应
   activeSeg: 0,
   showPreview: false,
+  publishing: false,
   queueTab: 'pending',
   historyTab: 'all',
   loaded: false
@@ -107,6 +108,8 @@ async function init() {
   state.loaded = true;
   renderBadges();
   window.addEventListener('hashchange', route);
+  // 全局点击委托：只绑定一次，杜绝重复渲染导致的监听叠加
+  document.addEventListener('click', handleGlobalClick);
   route();
   handleQueryToast();
   setInterval(tickCountdown, 1000);
@@ -187,6 +190,59 @@ function currentSegments() {
   });
 }
 
+/** 输入内容变化后同步媒体数组：内容清空时一并清空分段图片（修复"图片复活"） */
+function syncSegMedia() {
+  var ta = $('#composer-text');
+  if (!ta) return;
+  var texts = EchoThreadText.splitSegments(ta.value);
+  if (!texts.length) { state.segMedia = []; return; }
+  while (state.segMedia.length < texts.length) state.segMedia.push([]);
+  if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
+}
+
+/** 光标所在分段索引（按分隔符计数，越界收敛到合法范围） */
+function segmentIndexAt(text, pos) {
+  var texts = EchoThreadText.splitSegments(text || '');
+  if (!texts.length) return 0;
+  var before = String(text || '').slice(0, Math.max(0, pos || 0));
+  var lines = before.split(/\r?\n/);
+  var count = 0;
+  for (var i = 0; i < lines.length; i++) if (lines[i].trim() === '---') count++;
+  return Math.max(0, Math.min(count, texts.length - 1));
+}
+
+function currentSegIndex() {
+  var ta = $('#composer-text');
+  if (!ta) return 0;
+  return segmentIndexAt(ta.value, ta.selectionStart || 0);
+}
+
+function updateActiveSegLabel() {
+  var btn = $('#btn-add-image');
+  if (!btn) return;
+  btn.textContent = '🖼 添加图片（第 ' + (currentSegIndex() + 1) + ' 段）';
+}
+
+/** 写作台媒体条：所有已添加图片，按分段标注，可移除 */
+function renderMediaStrip() {
+  var box = $('#media-strip');
+  if (!box) return;
+  var items = [];
+  state.segMedia.forEach(function (ids, segIdx) {
+    (ids || []).forEach(function (id) {
+      var m = state.mediaMap.get(id);
+      if (m) items.push({ m: m, seg: segIdx });
+    });
+  });
+  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = items.map(function (it) {
+    return '<div class="media-item"><img src="' + esc(it.m.url) + '" alt="' + esc(it.m.name) + '">' +
+      '<span class="media-seg">第 ' + (it.seg + 1) + ' 段</span>' +
+      '<button class="rm" data-rm-media="' + esc(it.m.id) + '" data-seg="' + it.seg + '" title="移除图片">×</button></div>';
+  }).join('');
+}
+
 function editorPlatformChips(text) {
   var a = EchoChars.analyze(text);
   var html = '<span class="chip">中 ' + a.chinese + '</span>' +
@@ -226,16 +282,17 @@ function renderSegments() {
     // 文本预览
     var preview = seg.text.length > 140 ? seg.text.slice(0, 140) + '…' : seg.text;
     html += '<div class="seg-text small muted">' + esc(preview).replace(/\n/g, '<br>') + '</div>';
-    // 媒体
-    html += '<div class="seg-media">';
-    (seg.media || []).forEach(function (mid) {
-      var m = state.mediaMap.get(mid);
-      if (!m) return;
-      html += '<div class="media-thumb"><img src="' + esc(m.url) + '" alt="' + esc(m.name) + '">' +
-        '<button class="rm" data-rm-media="' + esc(mid) + '" data-seg="' + i + '" title="移除图片">×</button></div>';
-    });
-    html += '<button class="media-add" data-add-media="' + i + '" title="给第 ' + (i + 1) + ' 段添加图片">+</button>';
-    html += '</div></div>';
+    // 图片预览（只读；添加/删除在输入框下方的媒体条操作）
+    if ((seg.media || []).length) {
+      html += '<div class="seg-media">';
+      (seg.media || []).forEach(function (mid) {
+        var m = state.mediaMap.get(mid);
+        if (!m) return;
+        html += '<div class="media-thumb"><img src="' + esc(m.url) + '" alt="' + esc(m.name) + '"></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
   });
   box.innerHTML = html;
 }
@@ -263,6 +320,7 @@ async function uploadFiles(files, segIndex) {
     }
   }
   renderSegments();
+  renderMediaStrip();
 }
 
 /* ---------- 视图：写作台 ---------- */
@@ -308,11 +366,13 @@ function renderComposer() {
     '    <div class="card">' +
     '      <div class="editor-toolbar">' +
     '        <button class="btn sm" id="btn-split">✂️ 手动分段</button>' +
+    '        <button class="btn sm" id="btn-add-image">🖼 添加图片（第 1 段）</button>' +
     '        <button class="btn sm" id="btn-preview">👁 预览</button>' +
     '        <span class="spacer"></span>' +
     '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
     '      </div>' +
-    '      <textarea id="composer-text" placeholder="在这里写贴文……&#10;&#10;点击「手动分段」插入分隔线，一条内容即可变成分段长贴文。"></textarea>' +
+    '      <textarea id="composer-text" placeholder="在这里写贴文……&#10;&#10;「手动分段」插入分隔线；图片可点上方按钮添加，或直接 Ctrl+V 粘贴到光标处。"></textarea>' +
+    '      <div id="media-strip" class="media-strip" hidden></div>' +
     '      <div class="row" style="margin-top:10px">' +
     '        <input type="datetime-local" id="sched-time" value="' + localIso + '">' +
     '        <button class="btn primary" id="btn-schedule">⏰ 定时发布</button>' +
@@ -347,9 +407,33 @@ function renderComposer() {
 
   ta.addEventListener('input', function () {
     autoGrow(ta);
+    syncSegMedia();
     renderSegments();
+    renderMediaStrip();
+    updateActiveSegLabel();
     if (state.showPreview) renderPreview();
     try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
+  });
+
+  // 光标位置 → 当前分段（图片默认加到光标所在段）
+  ta.addEventListener('click', updateActiveSegLabel);
+  ta.addEventListener('keyup', updateActiveSegLabel);
+
+  // 剪贴板粘贴图片（Ctrl+V）
+  ta.addEventListener('paste', function (ev) {
+    var items = ev.clipboardData && ev.clipboardData.items;
+    if (!items) return;
+    var files = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file' && items[i].type && items[i].type.indexOf('image/') === 0) {
+        var f = items[i].getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) {
+      ev.preventDefault();
+      uploadFiles(files, currentSegIndex());
+    }
   });
 
   $('#btn-split').addEventListener('click', function () {
@@ -359,7 +443,10 @@ function renderComposer() {
     ta.focus();
     ta.setSelectionRange(r.cursorPos, r.cursorPos);
     autoGrow(ta);
+    syncSegMedia();
     renderSegments();
+    renderMediaStrip();
+    updateActiveSegLabel();
     try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
   });
 
@@ -383,28 +470,18 @@ function renderComposer() {
   var mediaInput = $('#media-input');
   mediaInput.addEventListener('change', function () {
     if (mediaInput.files && mediaInput.files.length) {
-      uploadFiles(mediaInput.files, state.activeSeg);
+      uploadFiles(mediaInput.files, currentSegIndex());
       mediaInput.value = '';
     }
   });
 
-  $('#seg-list').addEventListener('click', function (ev) {
-    var add = ev.target.closest('[data-add-media]');
-    if (add) {
-      state.activeSeg = parseInt(add.getAttribute('data-add-media'), 10) || 0;
-      $('#media-input').click();
-      return;
-    }
-    var rm = ev.target.closest('[data-rm-media]');
-    if (rm) {
-      var mid = rm.getAttribute('data-rm-media');
-      var seg = parseInt(rm.getAttribute('data-seg'), 10) || 0;
-      state.segMedia[seg] = (state.segMedia[seg] || []).filter(function (x) { return x !== mid; });
-      renderSegments();
-    }
+  $('#btn-add-image').addEventListener('click', function () {
+    $('#media-input').click();
   });
 
   renderSegments();
+  renderMediaStrip();
+  updateActiveSegLabel();
   autoGrow(ta);
 }
 
@@ -415,7 +492,7 @@ function autoGrow(ta) {
 
 async function saveDraft() {
   var ta = $('#composer-text');
-  if (!ta.value.trim()) { toast('内容为空，无需保存', 'err'); return null; }
+  if (!ta || !ta.value.trim()) { toast('内容为空，无需保存', 'err'); return null; }
   var body = draftBodyFromEditor();
   if (state.draftId) {
     await api('PUT', '/api/drafts/' + state.draftId, body);
@@ -430,53 +507,151 @@ async function saveDraft() {
   return state.draftId;
 }
 
-function selectedAccountIds() {
-  return Array.from(state.selectedAccounts);
+/* ---------- 发布进程弹窗 ---------- */
+function accountLabel(a) {
+  var p = (state.config.platforms || []).find(function (x) { return x.id === a.platform; });
+  return (p ? p.name.split(' ')[0] : a.platform) + ' @' + a.username;
 }
 
-async function scheduleDraft() {
-  var when = $('#sched-time').value;
-  if (!when) { toast('请先选择定时时间', 'err'); return; }
-  var id = await saveDraft();
-  if (!id) return;
-  try {
-    var r = await api('POST', '/api/drafts/' + id + '/schedule', {
-      scheduledAt: when,
-      accountIds: selectedAccountIds()
-    });
-    toast('已加入队列：' + r.posts.length + ' 个账号，' + fmtTime(r.posts[0] && r.posts[0].scheduledAt) + ' 发布', 'ok');
-    state.draftId = null;
-    try { localStorage.removeItem(LS_KEY); } catch (e) { }
-    await refreshPosts();
-    renderBadges();
-    route();
-  } catch (err) {
-    toast(err.message, 'err');
+function openPublishModal(title, accounts) {
+  var modal = $('#publish-modal');
+  if (!modal) return;
+  $('#publish-modal-title').textContent = title;
+  $('#publish-rows').innerHTML = accounts.map(function (a) {
+    return '<div class="publish-row" data-row="' + esc(a.id) + '">' +
+      '<span class="publish-ico">⏳</span>' +
+      '<span class="publish-label">' + esc(accountLabel(a)) + '</span>' +
+      '<span class="publish-detail muted">等待中…</span></div>';
+  }).join('');
+  modal.hidden = false;
+  $('#publish-close').hidden = true; // 进行中不可关闭
+}
+
+function updatePublishRow(accountId, status, detail, urls) {
+  var row = document.querySelector('[data-row="' + accountId + '"]');
+  if (!row) return;
+  var ico = row.querySelector('.publish-ico');
+  var det = row.querySelector('.publish-detail');
+  if (status === 'sending') {
+    ico.textContent = '⏳';
+    det.className = 'publish-detail muted';
+    det.textContent = '发送中…';
+  } else if (status === 'ok') {
+    ico.textContent = '✅';
+    det.className = 'publish-detail';
+    if (urls && urls.length) {
+      det.innerHTML = urls.map(function (u) {
+        return '<a href="' + esc(u) + '" target="_blank" rel="noopener">查看已发布 ↗</a>';
+      }).join(' ');
+    } else {
+      det.textContent = detail || '成功';
+    }
+  } else if (status === 'fail') {
+    ico.textContent = '❌';
+    det.className = 'publish-detail';
+    det.style.color = 'var(--err)';
+    det.textContent = detail || '失败';
   }
+}
+
+function closePublishModal() {
+  var m = $('#publish-modal');
+  if (m) m.hidden = true;
+}
+
+function setComposerBusy(busy) {
+  state.publishing = busy;
+  ['btn-publish', 'btn-schedule', 'btn-save'].forEach(function (id) {
+    var b = $('#' + id);
+    if (b) b.disabled = busy;
+  });
+  var pub = $('#btn-publish');
+  if (pub) pub.textContent = busy ? '⏳ 发布中…' : '🚀 立即发布';
+}
+
+/** 目标账号列表（未勾选则默认全部已连接账号） */
+function targetAccounts() {
+  return state.accounts.filter(function (a) {
+    return !state.selectedAccounts.size || state.selectedAccounts.has(a.id);
+  });
+}
+
+/** 发布/定时成功后：清空写作台；若在编辑草稿则消费掉该草稿 */
+async function afterComposeDone() {
+  var ta = $('#composer-text');
+  if (ta) ta.value = '';
+  state.segMedia = [];
+  state.showPreview = false;
+  try { localStorage.removeItem(LS_KEY); } catch (e) { }
+  if (state.draftId) {
+    try { await api('DELETE', '/api/drafts/' + state.draftId); } catch (e) { /* 忽略 */ }
+    state.draftId = null;
+  }
+  await Promise.all([refreshDrafts(), refreshPosts()]);
+  renderBadges();
+  renderComposer();
 }
 
 async function publishDraft() {
-  var id = await saveDraft();
-  if (!id) return;
-  try {
-    var r = await api('POST', '/api/drafts/' + id + '/publish', {
-      accountIds: selectedAccountIds()
-    });
-    var ok = r.results.filter(function (x) { return x.ok; });
-    var bad = r.results.filter(function (x) { return !x.ok; });
-    if (ok.length) {
-      toast('发布成功 ' + ok.length + ' 条' + (bad.length ? '，失败 ' + bad.length + ' 条' : ''), 'ok');
-      ok.forEach(function (x) { (x.urls || []).forEach(function (u) { window.open(u, '_blank'); }); });
-    } else {
-      toast(bad.map(function (x) { return x.error; }).join('；'), 'err');
+  if (state.publishing) return;
+  var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
+  if (!segments.length) { toast('内容为空，无法发布', 'err'); return; }
+  var targets = targetAccounts();
+  if (!targets.length) { toast('请先在右侧勾选目标账号（或先连接账号）', 'err'); return; }
+
+  setComposerBusy(true);
+  openPublishModal('发布进程', targets);
+  var okCount = 0;
+  for (var i = 0; i < targets.length; i++) {
+    var acc = targets[i];
+    updatePublishRow(acc.id, 'sending');
+    try {
+      var r = await api('POST', '/api/compose/publish', { segments: segments, accountIds: [acc.id] });
+      var res = (r.results && r.results[0]) || {};
+      if (res.ok) { okCount++; updatePublishRow(acc.id, 'ok', '', res.urls); }
+      else updatePublishRow(acc.id, 'fail', res.error || '发布失败');
+    } catch (e) {
+      updatePublishRow(acc.id, 'fail', e.message);
     }
-    state.draftId = null;
-    try { localStorage.removeItem(LS_KEY); } catch (e) { }
-    await refreshPosts();
-    renderBadges();
-  } catch (err) {
-    toast(err.message, 'err');
   }
+  setComposerBusy(false);
+  var closeBtn = $('#publish-close');
+  if (closeBtn) closeBtn.hidden = false;
+  toast('发布完成：成功 ' + okCount + '/' + targets.length, okCount ? 'ok' : 'err');
+  if (okCount > 0) await afterComposeDone();
+}
+
+async function scheduleDraft() {
+  if (state.publishing) return;
+  var when = $('#sched-time').value;
+  if (!when) { toast('请先选择定时时间', 'err'); return; }
+  var segments = currentSegments().filter(function (s) { return (s.text || '').trim() || (s.media || []).length; });
+  if (!segments.length) { toast('内容为空，无法定时', 'err'); return; }
+  var targets = targetAccounts();
+  if (!targets.length) { toast('请先在右侧勾选目标账号（或先连接账号）', 'err'); return; }
+
+  setComposerBusy(true);
+  openPublishModal('定时发布', targets);
+  targets.forEach(function (a) { updatePublishRow(a.id, 'sending'); });
+  var ok = false;
+  try {
+    var r = await api('POST', '/api/compose/schedule', {
+      segments: segments,
+      accountIds: targets.map(function (a) { return a.id; }),
+      scheduledAt: when
+    });
+    (r.posts || []).forEach(function (p) {
+      updatePublishRow(p.accountId, 'ok', '已加入队列 · ' + fmtTime(p.scheduledAt));
+    });
+    ok = true;
+  } catch (e) {
+    targets.forEach(function (a) { updatePublishRow(a.id, 'fail', e.message); });
+    toast(e.message, 'err');
+  }
+  setComposerBusy(false);
+  var closeBtn2 = $('#publish-close');
+  if (closeBtn2) closeBtn2.hidden = false;
+  if (ok) await afterComposeDone();
 }
 
 /* ---------- 视图：预览 ---------- */
@@ -548,27 +723,6 @@ function renderDrafts() {
   });
   html += '</div>';
   view.innerHTML = html;
-
-  view.addEventListener('click', function handler(ev) {
-    var edit = ev.target.closest('[data-edit]');
-    if (edit) {
-      state.draftId = edit.getAttribute('data-edit');
-      location.hash = '#/composer';
-      return;
-    }
-    var del = ev.target.closest('[data-del-draft]');
-    if (del) {
-      var id = del.getAttribute('data-del-draft');
-      if (!confirm('确定删除这条草稿？')) return;
-      api('DELETE', '/api/drafts/' + id).then(async function () {
-        toast('草稿已删除', 'ok');
-        if (state.draftId === id) state.draftId = null;
-        await refreshDrafts();
-        renderBadges();
-        renderDrafts();
-      }).catch(function (e) { toast(e.message, 'err'); });
-    }
-  });
 }
 
 /* ---------- 视图：发布队列 ---------- */
@@ -621,24 +775,6 @@ function renderQueue() {
     html += '</div>';
   }
   view.innerHTML = html;
-
-  $$('[data-qt]').forEach(function (a) {
-    a.addEventListener('click', function () { state.queueTab = a.getAttribute('data-qt'); renderQueue(); });
-  });
-
-  view.addEventListener('click', function (ev) {
-    var t = ev.target;
-    if (t.closest('[data-pub-now]')) {
-      var id1 = t.closest('[data-pub-now]').getAttribute('data-pub-now');
-      postAction('/api/posts/' + id1 + '/publish-now', '已触发发布');
-    } else if (t.closest('[data-cancel]')) {
-      var id2 = t.closest('[data-cancel]').getAttribute('data-cancel');
-      postAction('/api/posts/' + id2, '已取消', 'DELETE');
-    } else if (t.closest('[data-retry]')) {
-      var id3 = t.closest('[data-retry]').getAttribute('data-retry');
-      postAction('/api/posts/' + id3 + '/retry', '重试结果');
-    }
-  });
 }
 
 function postAction(path, okMsg, method) {
@@ -741,36 +877,103 @@ function renderAccounts() {
     });
   }
 
-  view.addEventListener('click', function (ev) {
-    var cp = ev.target.closest('[data-copy]');
-    if (cp) {
-      var text = cp.getAttribute('data-copy');
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { toast('已复制：' + text, 'ok'); }, function () { toast('复制失败，请手动复制', 'err'); });
-      } else { toast('浏览器不支持自动复制', 'err'); }
-      return;
-    }
-    var c = ev.target.closest('[data-connect]');
-    if (c) {
-      var pid = c.getAttribute('data-connect');
-      api('POST', '/api/auth/' + pid + '/start').then(function (r) {
-        location.href = r.authUrl;
-      }).catch(function (e) { toast(e.message, 'err'); });
-      return;
-    }
-    var u = ev.target.closest('[data-unbind]');
-    if (u) {
-      var id = u.getAttribute('data-unbind');
-      if (!confirm('解绑后需要重新授权才能发布，确定解绑？')) return;
-      api('DELETE', '/api/accounts/' + id).then(async function () {
-        toast('已解绑', 'ok');
-        await refreshAccounts();
-        renderAccounts();
-      }).catch(function (e) { toast(e.message, 'err'); });
-    }
-  });
 }
 
+/* ---------- 全局点击委托（只绑定一次，避免重复渲染叠加监听） ---------- */
+function handleGlobalClick(ev) {
+  var t = ev.target;
+
+  var copyEl = t.closest('[data-copy]');
+  if (copyEl) {
+    var text = copyEl.getAttribute('data-copy');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('已复制：' + text, 'ok'); }, function () { toast('复制失败，请手动复制', 'err'); });
+    } else { toast('浏览器不支持自动复制', 'err'); }
+    return;
+  }
+
+  var connectEl = t.closest('[data-connect]');
+  if (connectEl) {
+    var pid = connectEl.getAttribute('data-connect');
+    api('POST', '/api/auth/' + pid + '/start').then(function (r) {
+      location.href = r.authUrl;
+    }).catch(function (e) { toast(e.message, 'err'); });
+    return;
+  }
+
+  var unbindEl = t.closest('[data-unbind]');
+  if (unbindEl) {
+    var uid = unbindEl.getAttribute('data-unbind');
+    if (!confirm('解绑后需要重新授权才能发布，确定解绑？')) return;
+    api('DELETE', '/api/accounts/' + uid).then(async function () {
+      toast('已解绑', 'ok');
+      await refreshAccounts();
+      renderAccounts();
+    }).catch(function (e) { toast(e.message, 'err'); });
+    return;
+  }
+
+  var editEl = t.closest('[data-edit]');
+  if (editEl) {
+    state.draftId = editEl.getAttribute('data-edit');
+    location.hash = '#/composer';
+    return;
+  }
+
+  var delDraftEl = t.closest('[data-del-draft]');
+  if (delDraftEl) {
+    var did = delDraftEl.getAttribute('data-del-draft');
+    if (!confirm('确定删除这条草稿？')) return;
+    api('DELETE', '/api/drafts/' + did).then(async function () {
+      toast('草稿已删除', 'ok');
+      if (state.draftId === did) state.draftId = null;
+      await refreshDrafts();
+      renderBadges();
+      renderDrafts();
+    }).catch(function (e) { toast(e.message, 'err'); });
+    return;
+  }
+
+  var qtEl = t.closest('[data-qt]');
+  if (qtEl) {
+    state.queueTab = qtEl.getAttribute('data-qt');
+    renderQueue();
+    return;
+  }
+
+  var pubNowEl = t.closest('[data-pub-now]');
+  if (pubNowEl) {
+    postAction('/api/posts/' + pubNowEl.getAttribute('data-pub-now') + '/publish-now', '已触发发布');
+    return;
+  }
+
+  var cancelEl = t.closest('[data-cancel]');
+  if (cancelEl) {
+    postAction('/api/posts/' + cancelEl.getAttribute('data-cancel'), '已取消', 'DELETE');
+    return;
+  }
+
+  var retryEl = t.closest('[data-retry]');
+  if (retryEl) {
+    postAction('/api/posts/' + retryEl.getAttribute('data-retry') + '/retry', '重试结果');
+    return;
+  }
+
+  var rmMediaEl = t.closest('[data-rm-media]');
+  if (rmMediaEl) {
+    var mid = rmMediaEl.getAttribute('data-rm-media');
+    var seg = parseInt(rmMediaEl.getAttribute('data-seg'), 10) || 0;
+    state.segMedia[seg] = (state.segMedia[seg] || []).filter(function (x) { return x !== mid; });
+    renderSegments();
+    renderMediaStrip();
+    return;
+  }
+
+  if (t.closest('[data-modal-close]')) {
+    closePublishModal();
+    return;
+  }
+}
 /* ---------- 视图：设置 ---------- */
 async function renderSettings() {
   var view = $('#view');

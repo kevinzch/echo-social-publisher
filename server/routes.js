@@ -78,8 +78,24 @@ function makeRoutes(ctx) {
     return { title, accountIds, segments };
   }
 
-  /** 为目标账号创建队列记录 */
-  async function enqueuePosts(draft, accountIds, scheduledAt) {
+  /** 归一化写作台直传内容：支持 segments 结构或纯 text（按 --- 手动分段） */
+  function normalizeSegments(body) {
+    let segments = [];
+    if (Array.isArray(body.segments)) {
+      segments = body.segments.map((s) => ({
+        text: typeof s.text === 'string' ? s.text : '',
+        media: Array.isArray(s.media) ? s.media.filter((m) => typeof m === 'string') : []
+      }));
+    } else if (typeof body.text === 'string') {
+      segments = ThreadText.splitSegments(body.text).map((t) => ({ text: t, media: [] }));
+    }
+    const hasContent = segments.some((s) => (s.text || '').trim() || (s.media || []).length);
+    if (!hasContent) throw Object.assign(new Error('内容为空，无法发布'), { statusCode: 400 });
+    return segments;
+  }
+
+  /** 为目标账号创建队列记录（segments 直传，不依赖草稿） */
+  async function enqueueFromSegments(segments, accountIds, scheduledAt, draftId = null) {
     const connected = store.accounts.list().filter((a) => a.enabled !== false);
     const targets = accountIds && accountIds.length
       ? connected.filter((a) => accountIds.includes(a.id))
@@ -95,10 +111,10 @@ function makeRoutes(ctx) {
     for (const account of targets) {
       const post = {
         id: `post_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-        draftId: draft.id,
+        draftId: draftId,
         platform: account.platform,
         accountId: account.id,
-        segments: JSON.parse(JSON.stringify(draft.segments)),
+        segments: JSON.parse(JSON.stringify(segments)),
         scheduledAt,
         status: 'pending',
         attempts: 0,
@@ -112,6 +128,11 @@ function makeRoutes(ctx) {
       posts.push(post);
     }
     return posts;
+  }
+
+  /** 为目标账号创建队列记录（来自草稿） */
+  async function enqueuePosts(draft, accountIds, scheduledAt) {
+    return enqueueFromSegments(draft.segments, accountIds, scheduledAt, draft.id);
   }
 
   const routes = [
@@ -243,6 +264,50 @@ function makeRoutes(ctx) {
         const ok = await store.drafts.remove(params.id);
         if (!ok) return sendError(res, 404, '草稿不存在');
         sendJson(res, 200, { ok: true });
+      }
+    },
+
+    // ---------- 写作台直传（不落草稿） ----------
+    {
+      method: 'POST', pattern: '/api/compose/schedule',
+      handler: async (req, res) => {
+        try {
+          const body = await readJsonBody(req);
+          if (!body.scheduledAt) throw Object.assign(new Error('缺少 scheduledAt'), { statusCode: 400 });
+          const at = new Date(body.scheduledAt);
+          if (Number.isNaN(at.getTime())) throw Object.assign(new Error('scheduledAt 时间格式无效'), { statusCode: 400 });
+          if (at.getTime() < Date.now() - 60_000) throw Object.assign(new Error('定时时间已过，请选择将来的时间'), { statusCode: 400 });
+          const segments = normalizeSegments(body);
+          const posts = await enqueueFromSegments(segments, body.accountIds, at.toISOString());
+          await store.log('info', 'schedule', `写作台内容已加入队列（${posts.length} 个账号）`, { scheduledAt: at.toISOString() });
+          sendJson(res, 200, { posts: posts.map(postView) });
+        } catch (err) {
+          sendError(res, err.statusCode || 400, err.message);
+        }
+      }
+    },
+    {
+      method: 'POST', pattern: '/api/compose/publish',
+      handler: async (req, res) => {
+        try {
+          const body = await readJsonBody(req);
+          const segments = normalizeSegments(body);
+          const posts = await enqueueFromSegments(segments, body.accountIds, nowIso());
+          const results = [];
+          for (const post of posts) {
+            try {
+              const r = await publisher.publishPost(store.posts.get(post.id));
+              results.push({ accountId: post.accountId, platform: post.platform, ok: true, urls: r.urls });
+            } catch (err) {
+              results.push({ accountId: post.accountId, platform: post.platform, ok: false, error: err.message });
+            }
+          }
+          const okCount = results.filter((r) => r.ok).length;
+          await store.log('info', 'publish', `写作台立即发布完成（成功 ${okCount}/${results.length}）`, {});
+          sendJson(res, 200, { results });
+        } catch (err) {
+          sendError(res, err.statusCode || 400, err.message);
+        }
       }
     },
 

@@ -1,8 +1,8 @@
 /**
  * test/frontend.test.js — 前端静态守卫
- * 背景：2026-10-19 一次编辑误删 `var cp = ev.target.closest(...)` 声明，
- * 导致账号页点击全部静默失效（ReferenceError，node --check 查不出）。
- * 这里用可编译性 + 结构配对检查堵住这类回归。
+ * 覆盖两类真实事故：
+ * 1. 编辑误删声明导致点击静默失效（ReferenceError）
+ * 2. view.addEventListener 每次渲染重复绑定，导致确认框/动作叠加
  */
 'use strict';
 const { test } = require('node:test');
@@ -11,42 +11,60 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
 
 test('app.js 可编译（语法正确）', () => {
   assert.doesNotThrow(() => new Function(appJs), 'app.js 存在语法错误');
 });
 
-test('每个 ev.target.closest() 的返回值都被赋值（防点击静默失效）', () => {
-  const re = /(?:var\s+(\w+)\s*=\s*)?ev\.target\.closest\(/g;
-  const unassigned = [];
-  let m;
-  while ((m = re.exec(appJs)) !== null) {
-    if (!m[1]) {
-      unassigned.push(appJs.slice(m.index, m.index + 70).split('\n')[0]);
-    }
-  }
-  assert.equal(
-    unassigned.length, 0,
-    '以下 ev.target.closest() 未赋值，点击时会因未声明变量静默失效：\n' + unassigned.join('\n')
-  );
-  // 至少应存在若干事件委托（保证检查本身有效）
-  const total = appJs.match(/ev\.target\.closest\(/g) || [];
-  assert.ok(total.length >= 3, '未找到足够的事件委托，检查可能失效');
+test('点击事件走全局委托，视图渲染不再绑定 view 级监听（防叠加）', () => {
+  assert.match(appJs, /document\.addEventListener\('click', handleGlobalClick\)/);
+  assert.doesNotMatch(appJs, /view\.addEventListener\('click'/, 'renderXxx 中不应再挂 view 级 click 监听');
+  ['data-del-draft', 'data-edit', 'data-pub-now', 'data-cancel', 'data-retry', 'data-connect', 'data-unbind', 'data-rm-media']
+    .forEach(function (attr) {
+      assert.ok(appJs.indexOf(attr) !== -1, '全局委托缺少 ' + attr + ' 处理');
+    });
 });
 
-test('账号页三大操作处理器变量声明齐全', () => {
-  // copy / connect / unbind 三个处理器
-  assert.match(appJs, /var\s+cp\s*=\s*ev\.target\.closest\('\[data-copy\]'\)/);
-  assert.match(appJs, /var\s+c\s*=\s*ev\.target\.closest\('\[data-connect\]'\)/);
-  assert.match(appJs, /var\s+u\s*=\s*ev\.target\.closest\('\[data-unbind\]'\)/);
+test('立即发布/定时发布不落草稿，且有防重复发布', () => {
+  assert.match(appJs, /\/api\/compose\/publish/);
+  assert.match(appJs, /\/api\/compose\/schedule/);
+  assert.match(appJs, /if \(state\.publishing\) return;/);
+
+  const pubStart = appJs.indexOf('async function publishDraft');
+  const schedStart = appJs.indexOf('async function scheduleDraft');
+  const pubFn = appJs.slice(pubStart, schedStart);
+  assert.ok(pubStart > 0 && schedStart > pubStart, '未找到 publishDraft/scheduleDraft');
+  assert.ok(pubFn.indexOf('saveDraft(') === -1, 'publishDraft 不应调用 saveDraft（否则会写入草稿箱）');
+  const schedFn = appJs.slice(schedStart, schedStart + 1200);
+  assert.ok(schedFn.indexOf('saveDraft(') === -1, 'scheduleDraft 不应调用 saveDraft');
+});
+
+test('发布进程弹窗：逐账号状态与关闭控制', () => {
+  assert.match(html, /id="publish-modal"/);
+  assert.match(html, /id="publish-rows"/);
+  assert.match(html, /id="publish-close"/);
+  assert.match(appJs, /function openPublishModal/);
+  assert.match(appJs, /function updatePublishRow/);
+  assert.match(appJs, /function setComposerBusy/);
+  assert.match(css, /\.publish-row/);
+});
+
+test('图片交互：输入框添加 + 剪贴板粘贴 + 媒体条 + 清空同步', () => {
+  assert.match(appJs, /id="btn-add-image"/);
+  assert.match(appJs, /addEventListener\('paste'/);
+  assert.match(appJs, /function renderMediaStrip/);
+  assert.match(appJs, /function syncSegMedia/);
+  assert.match(appJs, /function segmentIndexAt/);
+  assert.ok(appJs.indexOf('data-add-media') === -1, '分段卡片内不应再有添加图片按钮');
+  assert.match(css, /\.media-strip/);
 });
 
 test('共享库与页面骨架被正确引用', () => {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   assert.match(html, /src="\/shared\/chars\.js"/);
   assert.match(html, /src="\/shared\/threadText\.js"/);
   assert.match(html, /src="\/app\.js"/);
-  // app.js 使用了共享库暴露的全局
   assert.match(appJs, /EchoChars\.analyze/);
   assert.match(appJs, /EchoThreadText\.splitSegments/);
 });

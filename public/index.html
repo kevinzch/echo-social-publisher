@@ -30,6 +30,20 @@
     <main class="main" id="view"><div class="loading">加载中…</div></main>
   </div>
   <div id="toast-root"></div>
+
+  <!-- 发布进程弹窗 -->
+  <div id="publish-modal" class="modal-mask" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="publish-modal-title">发布进程</h3>
+      </div>
+      <div id="publish-rows" class="publish-rows"></div>
+      <div class="modal-foot">
+        <button class="btn" id="publish-close" data-modal-close hidden>关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/shared/chars.js"></script>
   <script src="/shared/threadText.js"></script>
   <script src="/app.js"></script>
