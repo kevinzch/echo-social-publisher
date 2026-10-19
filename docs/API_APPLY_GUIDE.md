@@ -157,6 +157,19 @@ A：可以用其他端口，但要保证「Echo 侧地址」与「平台后台�
 **Q：Threads 后台保存时报「表单无法保存：所有跳转网址都必须使用 HTTPS」？**
 A：Meta 强制 Threads 的回调必须是 HTTPS，不接受 `http://127.0.0.1`（这与 X 相反）。解决：开一条 HTTPS 隧道（cloudflared/ngrok，见 2.4），把 `https://<隧道域名>/auth/threads/callback` 填入 Meta 后台，同时在 Echo `.env` 设置 `THREADS_REDIRECT_URI` 为同一地址。
 
+**Q：授权时跳转到 error.json，报「The user has not accepted the invite to test the app」（error_code 1349245）？**
+A：这是 **Meta 应用角色问题**，与 Echo 无关。开发模式（未发布）的 App 只允许**有已接受角色**的账号授权。按以下顺序排查：
+
+1. **确认两个账号是否同一个**：
+   - A = 创建 Meta 应用的 Facebook 账号（developers.facebook.com 右上角头像看到的）
+   - B = 你的 Threads 账号所绑定的 Facebook/Instagram 账号
+   - **A 和 B 必须是同一个**，否则授权必然报此错。
+2. **如果是同一个账号**：进「应用角色（App Roles）→ 角色（Roles）」看有没有**待接受的邀请**——用该 Facebook 账号登录后接受（通知中心或邮件里的邀请链接）；确认角色是「管理员」。
+3. **如果不是同一个账号**：用账号 A 进「应用角色 → 角色 → 添加测试者」，把账号 B 加为测试者；然后**用账号 B 登录 Facebook 接受邀请**（这一步骤常被遗漏——不加不接受就没权限）。
+4. 另外确保该 Facebook 账号已完成手机/邮箱验证（未验证账号无法持有角色）。
+
+角色搞定后重试「连接 Threads 账号」即可。开发模式下这一条是唯一必经之路（不存在"跳过角色直接授权"的选项）。
+
 **Q：X 后台保存时报 "Not a valid URL format" / 授权时提示 "Something went wrong"？**
 A：X 的开发者控制台**拒绝 `localhost` 形式**的回调/网站 URL（错误提示很含糊，这是已知行为）。改用 `127.0.0.1`：
 
