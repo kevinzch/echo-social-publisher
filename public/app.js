@@ -742,6 +742,7 @@ function renderAccounts() {
   }
 
   view.addEventListener('click', function (ev) {
+    var cp = ev.target.closest('[data-copy]');
     if (cp) {
       var text = cp.getAttribute('data-copy');
       if (navigator.clipboard && navigator.clipboard.writeText) {
