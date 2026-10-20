@@ -162,6 +162,19 @@ test('写作台始终展示全部平台，分段开关默认不勾选', () => {
   assert.match(css, /\.seg-plat\.no-acct/);
 });
 
+test('分段勾选与目标账号双向同步、空内容重置', () => {
+  // 勾选分段 → 自动选中对应账号
+  assert.match(appJs, /勾选某平台的分段 → 自动选中该平台的目标账号/);
+  assert.match(appJs, /state\.selectedAccounts\.add\(a\.id\)/);
+  // 取消最后一段 → 取消选中该平台账号
+  assert.match(appJs, /state\.selectedAccounts\.delete\(a\.id\)/);
+  // 主开关要覆盖空内容时的占位分段
+  assert.match(appJs, /Math\.max\(texts\.length, state\.segExclude\.length\)/);
+  // 默认值跟随已选账号
+  assert.match(appJs, /function defaultSegmentExclude/);
+  assert.match(appJs, /targetAccounts\(\)\.forEach/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);

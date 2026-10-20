@@ -159,7 +159,10 @@ async function refreshDrafts() { state.drafts = (await api('GET', '/api/drafts')
 async function refreshPosts() { state.posts = (await api('GET', '/api/posts')).posts; }
 async function refreshMedia() {
   var r = await api('GET', '/api/media-list');
-  state.mediaMap = new Map(r.media.map(function (m) { return [m.id, m]; }));
+  state.mediaMap = new Map(r.media.map(function (m) {
+    // 兜底：旧数据/异常响应没有 url 时按相对路径补上，避免缩略图 src=undefined
+    return [m.id, m.url ? m : Object.assign({ url: '/media/' + m.id + m.ext }, m)];
+  }));
 }
 
 function renderBadges() {
@@ -244,7 +247,14 @@ function applyPlatformToAll(plat, on) {
   var ta = $('#composer-text');
   if (!ta) return;
   var texts = EchoThreadText.splitSegments(ta.value);
-  for (var i = 0; i < texts.length; i++) {
+  // 内容为空时 currentSegments 仍会保留一个占位分段，这里必须一起处理，
+  // 否则"清空内容→勾选账号→重新输入"会出现分段状态没跟着账号走的问题
+  var n = Math.max(texts.length, state.segExclude.length);
+  if (n === 0) {
+    state.segExclude = [defaultSegmentExclude()];
+    n = 1;
+  }
+  for (var i = 0; i < n; i++) {
     var ex = state.segExclude[i] || (state.segExclude[i] = []);
     if (on) state.segExclude[i] = ex.filter(function (p) { return p !== plat; });
     else if (ex.indexOf(plat) === -1) ex.push(plat);
@@ -1139,8 +1149,22 @@ function handleGlobalChange(ev) {
   (state.segManual[seg] = state.segManual[seg] || {})[plat] = true;
   if (el.checked) {
     state.segExclude[seg] = list.filter(function (p) { return p !== plat; });
+    // 反向同步：勾选某平台的分段 → 自动选中该平台的目标账号
+    state.accounts.forEach(function (a) {
+      if (a.platform === plat) state.selectedAccounts.add(a.id);
+    });
   } else if (list.indexOf(plat) === -1) {
     list.push(plat);
+    // 该平台已无任何分段勾选 → 取消选中该平台的目标账号（不再触发主开关覆盖）
+    var anyOn = false;
+    for (var k = 0; k < state.segExclude.length; k++) {
+      if ((state.segExclude[k] || []).indexOf(plat) === -1) { anyOn = true; break; }
+    }
+    if (!anyOn) {
+      state.accounts.forEach(function (a) {
+        if (a.platform === plat) state.selectedAccounts.delete(a.id);
+      });
+    }
   }
   renderSegments();
   updateAccountCheckboxStates();

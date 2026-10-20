@@ -241,7 +241,9 @@ function makeRoutes(ctx) {
             size: body.size,
             dataBase64: body.dataBase64
           });
-          sendJson(res, 200, { media: { ...record, url: `${config.appBaseUrl}/media/${record.id}${record.ext}` } });
+          // 返回相对路径：浏览器按当前源加载（本地/公网都可用，不依赖隧道在线）；
+          // 发布到 Threads 时由发布器另外拼接公网绝对地址
+          sendJson(res, 200, { media: { ...record, url: `/media/${record.id}${record.ext}` } });
         } catch (err) {
           sendError(res, err.statusCode || 400, err.message);
         }
@@ -496,7 +498,10 @@ function makeRoutes(ctx) {
     },
     {
       method: 'GET', pattern: '/api/media-list',
-      handler: async (req, res) => sendJson(res, 200, { media: media.list() })
+      handler: async (req, res) => sendJson(res, 200, {
+        // 与上传接口一致：返回相对路径，浏览器按当前源加载
+        media: media.list().map((m) => ({ ...m, url: `/media/${m.id}${m.ext}` }))
+      })
     }
   ];
 

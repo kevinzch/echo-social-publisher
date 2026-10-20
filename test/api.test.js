@@ -125,13 +125,20 @@ test('媒体上传：成功 / 非法格式 / 超限；/media 可访问', async (
 
   const ok = await req(base, 'POST', '/api/media', pngRecord());
   assert.equal(ok.status, 200);
-  assert.match(ok.data.media.url, /\/media\/med_.*\.png$/);
+  // 必须是相对路径：浏览器按当前源加载，不依赖公网隧道在线
+  assert.match(ok.data.media.url, /^\/media\/med_.*\.png$/);
 
-  // 取 URL 的路径部分按相对地址访问（appBaseUrl 与测试端口无关）
-  const mediaPath = new URL(ok.data.media.url).pathname;
+  const mediaPath = ok.data.media.url;
   const served = await fetch(base + mediaPath);
   assert.equal(served.status, 200);
   assert.equal(served.headers.get('content-type'), 'image/png');
+
+  // 媒体列表也应带相对 url（刷新页面后缩略图仍可显示）
+  const list = await req(base, 'GET', '/api/media-list');
+  assert.equal(list.status, 200);
+  const item = list.data.media.find((m) => m.id === ok.data.media.id);
+  assert.ok(item);
+  assert.match(item.url, /^\/media\/med_.*\.png$/);
 
   const badType = await req(base, 'POST', '/api/media', { name: 'x.pdf', mime: 'application/pdf', dataBase64: 'AAAA' });
   assert.equal(badType.status, 400);
@@ -552,7 +559,7 @@ test('静态资源缓存：JS/CSS 每次校验（ETag 304），媒体长缓存',
   // 上传一张图片，验证媒体为长缓存
   const up = await req(base, 'POST', '/api/media', pngRecord());
   assert.equal(up.status, 200);
-  const mediaPath = new URL(up.data.media.url).pathname;
+  const mediaPath = up.data.media.url;
   const img = await fetch(base + mediaPath);
   assert.equal(img.status, 200);
   assert.match(img.headers.get('cache-control'), /max-age=86400/);
