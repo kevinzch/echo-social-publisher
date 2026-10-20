@@ -175,6 +175,22 @@ test('分段勾选与目标账号双向同步、空内容重置', () => {
   assert.match(appJs, /targetAccounts\(\)\.forEach/);
 });
 
+test('发布前预检与部分成功保留内容', () => {
+  assert.match(appJs, /EchoPreflight\.analyze/);
+  assert.match(appJs, /function preflightForTargets/);
+  assert.match(appJs, /发布前校验未通过/);
+  assert.match(appJs, /has-issue/);
+  // 部分成功：保留内容，取消成功平台勾选
+  assert.match(appJs, /okAccounts/);
+  assert.match(appJs, /applyPlatformToAll\(plat, false\)/);
+  assert.match(appJs, /部分成功/);
+  // 超限样式必须排在平台配色之后（否则 Bluesky/Mastodon 不标红）
+  const iBlue = css.indexOf('.chip.bluesky');
+  const iOver = css.indexOf('.chip.over');
+  assert.ok(iBlue > -1 && iOver > iBlue, '.chip.over 必须在 .chip.bluesky 之后');
+  assert.match(css, /\.seg-card\.has-issue/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);

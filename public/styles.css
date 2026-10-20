@@ -122,6 +122,9 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .seg-card.has-link { border-color: #EF9F27; background: #FFFBF0; }
 .seg-card.has-link .seg-no { background: #EF9F27; }
 .seg-card.muted-card { opacity: .55; }
+/* 预检发现超限（字数/图片数量/大小/格式）：红色描边 + 角标 */
+.seg-card.has-issue { border-color: #F04438; }
+.seg-card.has-issue .seg-no { background: #F04438; }
 .chip.warn { background: #FAEEDA; color: #854F0B; font-weight: 500; }
 
 /* 分段级平台开关 */
@@ -145,7 +148,11 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .chip .plat-ico { flex: none; }
 .chip.x { background: #e8f5fd; color: #0f1419; }
 .chip.threads { background: #f5e9fd; color: var(--threads-color); }
+.chip.bluesky { background: #e6f2ff; color: #0060b8; }
+.chip.mastodon { background: #eeedff; color: #4b4bd6; }
+/* 超限样式必须放在平台配色之后，否则同优先级会被覆盖（Bluesky/Mastodon 曾因此不标红） */
 .chip.over { background: var(--err-bg); color: var(--err); }
+.chip.issue { background: #fdecea; color: #b42318; }
 .chip.ok { background: var(--ok-bg); color: var(--ok); }
 .seg-media { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .media-thumb { position: relative; width: 72px; }
@@ -178,8 +185,6 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .plt.threads { background: var(--threads-color); color: #fff; }
 .plt.bluesky { background: #0085ff; color: #fff; }
 .plt.mastodon { background: #6364ff; color: #fff; }
-.chip.bluesky { background: #e6f2ff; color: #0060b8; }
-.chip.mastodon { background: #eeedff; color: #4b4bd6; }
 
 /* ---------- 列表 / 表格 ---------- */
 .list { display: flex; flex-direction: column; gap: 10px; }
@@ -284,6 +289,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 }
 .toast.ok { background: #14532d; }
 .toast.err { background: #7f1d1d; }
+.toast.warn { background: #854d0e; }
 @keyframes slidein { from { transform: translateX(20px); opacity: 0; } }
 
 /* ---------- 指南（markdown 渲染） ---------- */

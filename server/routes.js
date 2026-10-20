@@ -5,6 +5,7 @@
 const path = require('path');
 const { getPlatform, listPlatforms } = require('./platforms');
 const ThreadText = require('../shared/threadText');
+const EchoPreflight = require('../shared/preflight');
 
 const { matchRoute, sendJson, sendError, readJsonBody } = require('./http');
 
@@ -110,6 +111,24 @@ function makeRoutes(ctx) {
     const targets = connected.filter((a) => ids.includes(a.id));
     if (!targets.length) {
       throw Object.assign(new Error(`账号不存在或已解绑: ${ids.join(', ')}`), { statusCode: 400 });
+    }
+    // 发布前本地校验：字数 / 图片数量 / 单图大小 / 格式，逐段 × 逐目标平台
+    // 目的：任一段超限就整体拒绝，避免"部分平台发出去、部分被跳过"
+    {
+      const targetPlats = Array.from(new Set(targets.map((a) => a.platform)));
+      const plats = targetPlats
+        .map((id) => {
+          const p = getPlatform(id, config);
+          return p ? { id, name: p.constructor.name, limits: p.limits() } : null;
+        })
+        .filter(Boolean);
+      const issues = EchoPreflight.analyze(segments, plats, (id) => media.get(id));
+      if (issues.length) {
+        throw Object.assign(
+          new Error(`发布前校验未通过：${EchoPreflight.summary(issues, 3)}`),
+          { statusCode: 400 }
+        );
+      }
     }
     // 覆盖校验（一次性提交全部账号时启用）：某分段把所有目标平台都取消 → 无处可发，直接拒绝
     if (opts.validateCoverage) {

@@ -604,3 +604,42 @@ test('发布队列由新到旧排序（按创建时间，不按计划时间）',
   assert.equal(r.data.posts[0].id, 'new', '最近创建的应在最前');
   assert.equal(r.data.posts[1].id, 'old');
 });
+
+test('发布前校验：图片超过平台上限时整体拒绝，不产生队列记录', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'bluesky:did:1', 'bluesky');
+
+  // 1.5MB：低于全局 8MB 上传上限，但超过 Bluesky 的 1MB
+  const buf = Buffer.alloc(1.5 * 1024 * 1024, 7);
+  const up = await req(base, 'POST', '/api/media', {
+    name: 'big.png', mime: 'image/png', dataBase64: buf.toString('base64')
+  });
+  assert.equal(up.status, 200);
+
+  const r = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [{ text: 'hi', media: [up.data.media.id], exclude: [] }],
+    accountIds: ['bluesky:did:1'],
+    scheduledAt: new Date(Date.now() + 3600_000).toISOString()
+  });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /发布前校验未通过/);
+  assert.match(r.data.error, /Bluesky 上限 1\.0 MB/);
+
+  const posts = await req(base, 'GET', '/api/posts');
+  assert.equal(posts.data.posts.length, 0, '校验失败不应留下任何队列记录');
+});
+
+test('发布前校验：字数超限同样整体拒绝', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const r = await req(base, 'POST', '/api/compose/schedule', {
+    segments: [{ text: 'a'.repeat(400), media: [], exclude: [] }],
+    accountIds: ['x:1'],
+    scheduledAt: new Date(Date.now() + 3600_000).toISOString()
+  });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /字数/);
+});

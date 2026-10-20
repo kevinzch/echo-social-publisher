@@ -14,7 +14,7 @@ const { Scheduler } = require('./scheduler');
 const { makeRoutes } = require('./routes');
 const httpUtil = require('./http');
 
-const SHARED_ALLOW = new Set(['chars.js', 'threadText.js']);
+const SHARED_ALLOW = new Set(['chars.js', 'threadText.js', 'preflight.js']);
 const MEDIA_RE = /^\/media\/([\w.-]+)$/;
 
 /**

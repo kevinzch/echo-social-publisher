@@ -348,6 +348,28 @@ function visiblePlatforms() {
   return platformIds();
 }
 
+/** 取平台对象（含 limits），供预检使用 */
+function platformObjects(ids) {
+  var out = [];
+  (state.config.platforms || []).forEach(function (p) {
+    if (!ids || ids.indexOf(p.id) !== -1) out.push({ id: p.id, name: p.name, limits: p.limits });
+  });
+  return out;
+}
+
+function mediaLookup(id) {
+  return state.mediaMap.get(id) || null;
+}
+
+/** 发布前本地预检：字数 / 图片数量 / 单图大小 / 格式（逐段 × 逐目标平台） */
+function preflightForTargets(segments, targets) {
+  var plats = [];
+  targets.forEach(function (a) {
+    if (plats.indexOf(a.platform) === -1) plats.push(a.platform);
+  });
+  return EchoPreflight.analyze(segments, platformObjects(plats), mediaLookup);
+}
+
 /** 新分段的默认平台状态：跟随当前已选目标账号；未选账号则全部不勾选 */
 function defaultSegmentExclude() {
   var on = {};
@@ -366,6 +388,16 @@ function renderSegments() {
   var plats = visiblePlatforms();
   var connectedPlats = {};
   state.accounts.forEach(function (a) { connectedPlats[a.platform] = true; });
+  // 预检问题（按段分组）：已选账号则只校验目标平台，未选则校验全部平台
+  var selectedPlatsForWarn = [];
+  targetAccounts().forEach(function (a) {
+    if (selectedPlatsForWarn.indexOf(a.platform) === -1) selectedPlatsForWarn.push(a.platform);
+  });
+  var segIssues = {};
+  EchoPreflight.analyze(segments, platformObjects(selectedPlatsForWarn.length ? selectedPlatsForWarn : plats), mediaLookup)
+    .forEach(function (it) {
+      (segIssues[it.segNo - 1] = segIssues[it.segNo - 1] || []).push(it);
+    });
   var html = '';
   segments.forEach(function (seg, i) {
     var over = false;
@@ -383,11 +415,16 @@ function renderSegments() {
       if (selectedPlats.indexOf(a.platform) === -1) selectedPlats.push(a.platform);
     });
     var allExcluded = selectedPlats.length > 0 && selectedPlats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
-    var cls = 'seg-card' + (over ? ' over' : '') + (hasLink ? ' has-link' : '') + (allExcluded ? ' muted-card' : '');
+    var issues = segIssues[i] || [];
+    var cls = 'seg-card' + (over ? ' over' : '') + (hasLink ? ' has-link' : '') +
+      (allExcluded ? ' muted-card' : '') + (issues.length ? ' has-issue' : '');
     html += '<div class="' + cls + '" data-seg="' + i + '">' +
       '<div class="seg-head"><span class="seg-no">' + (i + 1) + '</span>' +
       '<span class="muted small">第 ' + (i + 1) + ' 段</span>' +
       (hasLink ? '<span class="chip warn" title="X 对含链接的帖子按 $0.20/条计费">含链接</span>' : '') +
+      (issues.length
+        ? '<span class="chip issue" title="' + esc(issues.map(function (x) { return x.message; }).join('\n')) + '">⚠ ' + issues.length + ' 项超限</span>'
+        : '') +
       '<div class="seg-counts">' + editorPlatformChips(seg.text) + '</div></div>';
     // 分段级平台开关：取消勾选即不发布到该平台
     html += '<div class="seg-plats">';
@@ -767,26 +804,61 @@ async function publishDraft() {
     return;
   }
 
+  // 本地预检（字数 / 图片数量 / 单图大小 / 格式）：任一段超限就整体阻止，
+  // 避免"部分平台发出去、超限平台被跳过"导致贴文缺段
+  var issues = preflightForTargets(allSegs, targets);
+  if (issues.length) {
+    toast('发布前校验未通过：' + EchoPreflight.summary(issues, 2), 'err');
+    return;
+  }
+
   setComposerBusy(true);
   openPublishModal('发布进程', targets);
-  var okCount = 0;
+  var okAccounts = [];
+  var failAccounts = [];
   for (var i = 0; i < targets.length; i++) {
     var acc = targets[i];
     updatePublishRow(acc.id, 'sending');
     try {
       var r = await api('POST', '/api/compose/publish', { segments: segments, accountIds: [acc.id] });
       var res = (r.results && r.results[0]) || {};
-      if (res.ok) { okCount++; updatePublishRow(acc.id, 'ok', '', res.urls); }
-      else updatePublishRow(acc.id, 'fail', res.error || '发布失败');
+      if (res.ok) { okAccounts.push(acc); updatePublishRow(acc.id, 'ok', '', res.urls); }
+      else { failAccounts.push(acc); updatePublishRow(acc.id, 'fail', res.error || '发布失败'); }
     } catch (e) {
+      failAccounts.push(acc);
       updatePublishRow(acc.id, 'fail', e.message);
     }
   }
   setComposerBusy(false);
   var closeBtn = $('#publish-close');
   if (closeBtn) closeBtn.hidden = false;
-  toast('发布完成：成功 ' + okCount + '/' + targets.length, okCount ? 'ok' : 'err');
-  if (okCount > 0) await afterComposeDone();
+
+  if (!failAccounts.length) {
+    toast('发布完成：成功 ' + okAccounts.length + '/' + targets.length, 'ok');
+    await afterComposeDone();
+    return;
+  }
+
+  if (!okAccounts.length) {
+    toast('发布失败：0/' + targets.length + '，内容已保留，可修改后重试', 'err');
+    return;
+  }
+
+  // 部分成功：保留写作台内容；取消已成功平台的分段勾选与账号选中，
+  // 失败平台保持原样，方便直接重试
+  var okPlats = [];
+  var failPlats = [];
+  okAccounts.forEach(function (a) { if (okPlats.indexOf(a.platform) === -1) okPlats.push(a.platform); });
+  failAccounts.forEach(function (a) { if (failPlats.indexOf(a.platform) === -1) failPlats.push(a.platform); });
+  okPlats.forEach(function (plat) {
+    if (failPlats.indexOf(plat) === -1) applyPlatformToAll(plat, false);
+  });
+  okAccounts.forEach(function (a) { state.selectedAccounts.delete(a.id); });
+  renderSegments();
+  updateAccountCheckboxStates();
+  if (state.showPreview) renderPreview();
+  toast('部分成功：' + okAccounts.length + '/' + targets.length +
+    '。内容已保留，已取消成功平台，可直接重试失败平台', 'warn');
 }
 
 async function scheduleDraft() {
@@ -806,20 +878,33 @@ async function scheduleDraft() {
     return;
   }
 
+  // 与立即发布同一套本地预检
+  var issues = preflightForTargets(allSegs, targets);
+  if (issues.length) {
+    toast('定时前校验未通过：' + EchoPreflight.summary(issues, 2), 'err');
+    return;
+  }
+
   setComposerBusy(true);
   openPublishModal('定时发布', targets);
   targets.forEach(function (a) { updatePublishRow(a.id, 'sending'); });
-  var ok = false;
+  var created = [];
   try {
     var r = await api('POST', '/api/compose/schedule', {
       segments: segments,
       accountIds: targets.map(function (a) { return a.id; }),
       scheduledAt: when
     });
-    (r.posts || []).forEach(function (p) {
+    created = r.posts || [];
+    created.forEach(function (p) {
       updatePublishRow(p.accountId, 'ok', '已加入队列 · ' + fmtTime(p.scheduledAt));
     });
-    ok = true;
+    // 未入队的账号标记失败
+    targets.forEach(function (a) {
+      if (!created.some(function (p) { return p.accountId === a.id; })) {
+        updatePublishRow(a.id, 'fail', '未加入队列（该平台没有可发布的分段）');
+      }
+    });
   } catch (e) {
     targets.forEach(function (a) { updatePublishRow(a.id, 'fail', e.message); });
     toast(e.message, 'err');
@@ -827,7 +912,31 @@ async function scheduleDraft() {
   setComposerBusy(false);
   var closeBtn2 = $('#publish-close');
   if (closeBtn2) closeBtn2.hidden = false;
-  if (ok) await afterComposeDone();
+
+  if (!created.length) return;
+  if (created.length === targets.length) {
+    await afterComposeDone();
+    toast('已加入队列：' + created.length + ' 个账号', 'ok');
+    return;
+  }
+  // 部分入队：保留内容，取消已入队账号/平台
+  var okAccs = targets.filter(function (a) {
+    return created.some(function (p) { return p.accountId === a.id; });
+  });
+  var okPlats = [];
+  okAccs.forEach(function (a) { if (okPlats.indexOf(a.platform) === -1) okPlats.push(a.platform); });
+  var failPlats = [];
+  targets.forEach(function (a) {
+    if (!okAccs.some(function (x) { return x.id === a.id; }) && failPlats.indexOf(a.platform) === -1) failPlats.push(a.platform);
+  });
+  okPlats.forEach(function (plat) {
+    if (failPlats.indexOf(plat) === -1) applyPlatformToAll(plat, false);
+  });
+  okAccs.forEach(function (a) { state.selectedAccounts.delete(a.id); });
+  renderSegments();
+  updateAccountCheckboxStates();
+  if (state.showPreview) renderPreview();
+  toast('部分入队：' + created.length + '/' + targets.length + '。内容已保留，可修正后重试', 'warn');
 }
 
 /* ---------- 视图：预览 ---------- */
