@@ -17,6 +17,18 @@ const { httpRequest, authHeader } = require('../oauth');
 const DEFAULT_PDS = 'https://bsky.social';
 const ACCESS_TTL_MS = 2 * 3600 * 1000;
 
+/** 解析 JWT 的 exp（毫秒）；refreshJwt 本身是 JWT，可据此预知续期凭证何时失效 */
+function jwtExpMs(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return payload && payload.exp ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 为文本中的 URL 生成 richtext facets（byte 偏移按 UTF-8 计算） */
 function buildLinkFacets(text) {
   const facets = [];
@@ -95,6 +107,7 @@ class BlueskyAdapter extends PlatformAdapter {
         refreshToken: s.refreshJwt,
         tokenType: 'Bearer',
         expiresAt: Date.now() + ACCESS_TTL_MS,
+        refreshExpiresAt: jwtExpMs(s.refreshJwt),
         pds
       }
     };
@@ -116,6 +129,7 @@ class BlueskyAdapter extends PlatformAdapter {
       refreshToken: res.json.refreshJwt || tokens.refreshToken,
       tokenType: 'Bearer',
       expiresAt: Date.now() + ACCESS_TTL_MS,
+      refreshExpiresAt: jwtExpMs(res.json.refreshJwt || tokens.refreshToken),
       pds
     };
   }
@@ -213,3 +227,4 @@ class BlueskyAdapter extends PlatformAdapter {
 
 module.exports = BlueskyAdapter;
 module.exports.buildLinkFacets = buildLinkFacets;
+module.exports.jwtExpMs = jwtExpMs;

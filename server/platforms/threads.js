@@ -95,7 +95,9 @@ class ThreadsAdapter extends PlatformAdapter {
       refreshToken: json.access_token, // Threads 用 access_token 自身续期
       tokenType: json.token_type || 'Bearer',
       scope: null,
-      expiresAt: json.expires_in ? Date.now() + json.expires_in * 1000 : null
+      expiresAt: json.expires_in ? Date.now() + json.expires_in * 1000 : null,
+      // 长期令牌 60 天，且必须在使用期内续期；按 59 天估算续期凭证的有效期
+      refreshExpiresAt: Date.now() + 59 * 24 * 3600 * 1000
     };
   }
 

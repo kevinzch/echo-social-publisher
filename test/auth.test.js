@@ -293,3 +293,42 @@ test('publicView：Threads 用 access token 自身续期 → 过期时仍为 ref
   assert.equal(v.tokenStatus, 'refreshable');
   assert.equal(v.tokenExpired, false);
 });
+
+test('publicView：refresh token 本身过期 → expired（即使有 refreshToken）', () => {
+  const svc = new AccountService(makeStore(), {});
+  const v = svc.publicView({
+    id: 'bluesky:9', platform: 'bluesky', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1000, refreshExpiresAt: Date.now() - 5000 }
+  });
+  assert.equal(v.tokenStatus, 'expired');
+  assert.equal(v.tokenExpired, true);
+});
+
+test('publicView：续期凭证未到期 → refreshable，并暴露 refreshExpiresAt', () => {
+  const svc = new AccountService(makeStore(), {});
+  const until = Date.now() + 30 * 24 * 3600 * 1000;
+  const v = svc.publicView({
+    id: 'bluesky:10', platform: 'bluesky', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1000, refreshExpiresAt: until }
+  });
+  assert.equal(v.tokenStatus, 'refreshable');
+  assert.equal(v.refreshExpiresAt, new Date(until).toISOString());
+});
+
+test('ensureFreshToken：续期失败时标记账号需重新授权', async () => {
+  const store = makeStore();
+  const accounts = new AccountService(store, {
+    bluesky: { service: 'http://127.0.0.1:1' } // 不可达 → 刷新必然失败
+  });
+  const acc = await store.accounts.insert({
+    id: 'bluesky:bad', platform: 'bluesky', externalId: 'did:bad', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1000, pds: 'http://127.0.0.1:1' },
+    enabled: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  });
+
+  await assert.rejects(() => accounts.ensureFreshToken(acc));
+  const updated = store.accounts.get('bluesky:bad');
+  assert.equal(updated.reauthRequired, true);
+  assert.ok(updated.reauthReason);
+  assert.equal(accounts.publicView(updated).tokenStatus, 'expired');
+});

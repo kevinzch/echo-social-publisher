@@ -154,3 +154,20 @@ test('buildLinkFacets：UTF-8 字节偏移正确', () => {
   assert.equal(facets[0].index.byteEnd, expectedStart + Buffer.byteLength('https://example.com/x', 'utf8'));
   assert.equal(facets[0].features[0].uri, 'https://example.com/x');
 });
+
+test('connect：从 refreshJwt 解析出续期凭证的到期时间', async (t) => {
+  const exp = Math.floor((Date.now() + 90 * 24 * 3600 * 1000) / 1000);
+  const payload = Buffer.from(JSON.stringify({ scope: 'com.atproto.refresh', exp })).toString('base64url');
+  const refreshJwt = 'header.' + payload + '.sig';
+  const server = await startMock((req) => {
+    if (req.path === '/xrpc/com.atproto.server.createSession') {
+      return { body: { accessJwt: 'a', refreshJwt, did: 'did:plc:1', handle: 'u.bsky.social' } };
+    }
+    if (req.path === '/xrpc/app.bsky.actor.getProfile') return { body: { displayName: 'U' } };
+    return null;
+  });
+  t.after(() => server.close());
+
+  const r = await makeAdapter(baseUrlOf(server)).connect({ identifier: 'u.bsky.social', password: 'pw' });
+  assert.equal(r.tokens.refreshExpiresAt, exp * 1000);
+});

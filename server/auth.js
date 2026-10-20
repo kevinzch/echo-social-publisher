@@ -4,6 +4,7 @@
 'use strict';
 const { PendingAuthStore, pkceChallenge } = require('./oauth');
 const { getPlatform } = require('./platforms');
+const { jwtExpMs } = require('./platforms/bluesky');
 
 class AccountService {
   /**
@@ -167,15 +168,22 @@ class AccountService {
   publicView(account) {
     const tokens = account.tokens || {};
     const expiresAt = tokens.expiresAt || null;
+    // 存量账号可能没存 refreshExpiresAt：Bluesky 的 refreshJwt 是 JWT，可现算
+    const refreshExpiresAt = tokens.refreshExpiresAt
+      || (account.platform === 'bluesky' ? jwtExpMs(tokens.refreshToken) : null);
     const isExpired = !!(expiresAt && expiresAt < Date.now());
-    // X / Bluesky 的 access token 只有 2 小时，发布时会用 refresh token 自动续期；
-    // 只有"过期且没有可用的 refresh token"才真正需要重新授权。
+    const refreshDead = !!(refreshExpiresAt && refreshExpiresAt < Date.now());
+    // X / Bluesky 的 access token 只有 2 小时，发布时会用 refresh token 自动续期。
     // 注意：Threads 的 refreshToken 就是 accessToken 本身（用自身续期），需单独判断。
     const canRefresh = account.platform === 'threads'
       ? !!tokens.refreshToken
       : !!(tokens.refreshToken && tokens.refreshToken !== tokens.accessToken);
+
     let tokenStatus = 'ok';
-    if (isExpired) tokenStatus = canRefresh ? 'refreshable' : 'expired';
+    if (account.reauthRequired) tokenStatus = 'expired';       // 上次续期已失败
+    else if (refreshDead) tokenStatus = 'expired';             // refresh token 本身到期（如 Bluesky 90 天）
+    else if (isExpired) tokenStatus = canRefresh ? 'refreshable' : 'expired';
+
     return {
       id: account.id,
       platform: account.platform,
@@ -184,9 +192,11 @@ class AccountService {
       enabled: account.enabled !== false,
       manual: !!account.manual,
       tokenExpiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      refreshExpiresAt: refreshExpiresAt ? new Date(refreshExpiresAt).toISOString() : null,
       tokenStatus,
       // 兼容旧字段：仅在真正无法续期时才算"已过期"
       tokenExpired: tokenStatus === 'expired',
+      reauthReason: account.reauthReason || null,
       createdAt: account.createdAt,
       updatedAt: account.updatedAt
     };
@@ -202,23 +212,40 @@ class AccountService {
     return ok;
   }
 
-  /** 令牌将过期时自动刷新 */
+  /** 令牌将过期时自动刷新（发布前调用） */
   async ensureFreshToken(account) {
     const platform = getPlatform(account.platform, this.config);
     const expiresAt = account.tokens && account.tokens.expiresAt;
     const needsRefresh = expiresAt && this._shouldRefresh(account.platform, expiresAt);
     if (!needsRefresh) return account;
-    const merged = await platform.refreshToken(account.tokens);
+    let merged;
+    try {
+      merged = await platform.refreshToken(account.tokens);
+    } catch (err) {
+      // 续期失败（refresh token 已失效/被撤销）：标记账号需要重新授权，
+      // 避免界面一直显示"待自动续期"而实际已不可用
+      await this.store.accounts.update(account.id, {
+        reauthRequired: true,
+        reauthReason: err.message,
+        reauthAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      await this.store.log('error', 'auth', `刷新令牌失败 ${account.id}: ${err.message}`);
+      throw err;
+    }
     const tokens = {
       ...account.tokens,
       accessToken: merged.accessToken || account.tokens.accessToken,
       refreshToken: merged.refreshToken || account.tokens.refreshToken,
       expiresAt: merged.expiresAt || account.tokens.expiresAt,
+      refreshExpiresAt: merged.refreshExpiresAt || account.tokens.refreshExpiresAt || null,
       tokenType: merged.tokenType || account.tokens.tokenType,
       scope: merged.scope || account.tokens.scope
     };
     const updated = await this.store.accounts.update(account.id, {
       tokens,
+      reauthRequired: false,
+      reauthReason: null,
       updatedAt: new Date().toISOString()
     });
     await this.store.log('info', 'auth', `刷新令牌 ${account.id}`);
