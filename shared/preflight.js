@@ -52,34 +52,38 @@
         if (lim.maxChars && count > lim.maxChars) {
           issues.push({
             segNo: idx + 1, platform: p.id, platformName: p.name, kind: 'chars',
-            message: `第 ${idx + 1} 段 ${p.name} 字数 ${count}/${lim.maxChars}`
+            message: `${p.name}：字数 ${count}/${lim.maxChars}`
           });
         }
 
         if (mediaIds.length > lim.maxImages) {
           issues.push({
             segNo: idx + 1, platform: p.id, platformName: p.name, kind: 'count',
-            message: `第 ${idx + 1} 段图片 ${mediaIds.length} 张，${p.name} 上限 ${lim.maxImages} 张`
+            message: `${p.name}：图片 ${mediaIds.length} 张，上限 ${lim.maxImages} 张`
           });
         }
 
-        for (const id of mediaIds) {
+        mediaIds.forEach((id, mi) => {
           const m = getMedia(id);
-          if (!m) continue; // 文件缺失由发布器另行报错
+          if (!m) return; // 文件缺失由发布器另行报错
+          const ordinal = mi + 1;
+          const label = `第 ${ordinal} 张图片（${m.name || m.id}）`;
           if (lim.imageMimes && lim.imageMimes.length && lim.imageMimes.indexOf(m.mime) === -1) {
             issues.push({
               segNo: idx + 1, platform: p.id, platformName: p.name, kind: 'mime',
-              message: `第 ${idx + 1} 段图片 ${m.name || m.id} 格式 ${m.mime} 不被 ${p.name} 支持`
+              mediaId: id, mediaIndex: ordinal, mediaName: m.name || id,
+              message: `${p.name}：${label}格式 ${m.mime} 不支持`
             });
-            continue;
+            return;
           }
           if (lim.maxImageBytes && m.size > lim.maxImageBytes) {
             issues.push({
               segNo: idx + 1, platform: p.id, platformName: p.name, kind: 'size',
-              message: `第 ${idx + 1} 段图片 ${m.name || m.id} ${formatBytes(m.size)}，超过 ${p.name} 上限 ${formatBytes(lim.maxImageBytes)}`
+              mediaId: id, mediaIndex: ordinal, mediaName: m.name || id,
+              message: `${p.name}：${label}${formatBytes(m.size)}，上限 ${formatBytes(lim.maxImageBytes)}`
             });
           }
-        }
+        });
       }
     });
 

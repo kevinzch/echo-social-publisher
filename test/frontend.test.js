@@ -207,6 +207,13 @@ test('写作台平台规则结构化展示', () => {
   assert.match(css, /\.plat-rule/);
 });
 
+test('超限图片在卡片缩略图上直接标记', () => {
+  assert.match(appJs, /mediaIssues\[mid\]/);
+  assert.match(appJs, /thumb-badge/);
+  assert.match(appJs, /media-thumb' \+ \(mis\.length \? ' over' : ''\)/);
+  assert.match(css, /\.media-thumb\.over/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);

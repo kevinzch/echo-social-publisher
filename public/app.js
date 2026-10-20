@@ -443,11 +443,21 @@ function renderSegments() {
     html += '<div class="seg-text small muted">' + esc(seg.text).replace(/\n/g, '<br>') + '</div>';
     // 图片预览（只读；添加/删除在输入框下方的媒体条操作）
     if ((seg.media || []).length) {
+      // 单张图片级别的超限标记（尺寸/格式），直接标在对应缩略图上
+      var mediaIssues = {};
+      issues.forEach(function (it) {
+        if (it.mediaId) (mediaIssues[it.mediaId] = mediaIssues[it.mediaId] || []).push(it);
+      });
       html += '<div class="seg-media">';
       (seg.media || []).forEach(function (mid) {
         var m = state.mediaMap.get(mid);
         if (!m) return;
-        html += '<div class="media-thumb"><img src="' + esc(m.url) + '" alt="' + esc(m.name) + '"></div>';
+        var mis = mediaIssues[mid] || [];
+        html += '<div class="media-thumb' + (mis.length ? ' over' : '') + '"' +
+          (mis.length ? ' title="' + esc(mis.map(function (x) { return x.message; }).join('\n')) + '"' : '') + '>' +
+          '<img src="' + esc(m.url) + '" alt="' + esc(m.name) + '">' +
+          (mis.length ? '<span class="thumb-badge">超限</span>' : '') +
+          '</div>';
       });
       html += '</div>';
     }

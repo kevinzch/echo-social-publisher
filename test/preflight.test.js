@@ -69,3 +69,22 @@ test('summary 截断并带总数', () => {
   const s = Preflight.summary(issues, 2);
   assert.match(s, /共 \d+ 项/);
 });
+
+test('图片问题用「第 N 张图片（文件名）」定位，且不再重复"第 N 段"', () => {
+  const segs = [{ text: 'hi', media: ['small', 'big'], exclude: [] }];
+  const issues = Preflight.analyze(segs, [BS], get);
+  const sizeIssue = issues.find((i) => i.kind === 'size');
+  assert.ok(sizeIssue, '应有尺寸超限');
+  assert.equal(sizeIssue.mediaIndex, 2, '应为第 2 张');
+  assert.equal(sizeIssue.mediaId, 'big');
+  assert.match(sizeIssue.message, /第 2 张图片（big\.png）/);
+  assert.ok(!/第 \d+ 段/.test(sizeIssue.message), '卡片内已标明段号，消息不应重复');
+});
+
+test('字数与图片数量提示不再带"第 N 段"', () => {
+  const segs = [{ text: 'a'.repeat(320), media: ['small', 'small', 'small', 'small', 'small'], exclude: [] }];
+  const issues = Preflight.analyze(segs, [BS], get);
+  assert.ok(issues.length >= 2);
+  issues.forEach((i) => assert.ok(!/第 \d+ 段/.test(i.message), i.message));
+  assert.match(issues.find((i) => i.kind === 'chars').message, /^Bluesky：字数 320\/300$/);
+});

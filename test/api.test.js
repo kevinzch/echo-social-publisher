@@ -624,7 +624,7 @@ test('发布前校验：图片超过平台上限时整体拒绝，不产生队�
   });
   assert.equal(r.status, 400);
   assert.match(r.data.error, /发布前校验未通过/);
-  assert.match(r.data.error, /Bluesky 上限 1\.0 MB/);
+  assert.match(r.data.error, /Bluesky：第 1 张图片（big\.png）1\.5 MB，上限 1\.0 MB/);
 
   const posts = await req(base, 'GET', '/api/posts');
   assert.equal(posts.data.posts.length, 0, '校验失败不应留下任何队列记录');

@@ -168,6 +168,13 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .chip.ok { background: var(--ok-bg); color: var(--ok); }
 .seg-media { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .media-thumb { position: relative; width: 72px; }
+/* 单张图片超限：红色描边 + 右上角「超限」角标 */
+.media-thumb.over img { border: 2px solid var(--err); box-shadow: 0 0 0 2px var(--err-bg); }
+.media-thumb .thumb-badge {
+  position: absolute; left: 2px; bottom: 2px;
+  background: var(--err); color: #fff; font-size: 9px; line-height: 1;
+  padding: 2px 4px; border-radius: 4px;
+}
 .media-thumb img {
   width: 72px; height: 72px; object-fit: cover; border-radius: 8px;
   border: 1px solid var(--border); display: block;
