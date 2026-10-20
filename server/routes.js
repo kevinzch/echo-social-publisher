@@ -392,7 +392,13 @@ function makeRoutes(ctx) {
         const status = url.searchParams.get('status');
         let posts = store.posts.list();
         if (status) posts = posts.filter((p) => p.status === status);
-        posts.sort((a, b) => (a.scheduledAt < b.scheduledAt ? 1 : -1));
+        // 由新到旧：最近创建的排在最前（与发布记录一致，便于第一时间确认最新状态）
+        posts.sort((a, b) => {
+          const ak = a.createdAt || a.scheduledAt || '';
+          const bk = b.createdAt || b.scheduledAt || '';
+          if (ak === bk) return (a.scheduledAt || '') < (b.scheduledAt || '') ? 1 : -1;
+          return ak < bk ? 1 : -1;
+        });
         sendJson(res, 200, { posts: posts.map(postView) });
       }
     },

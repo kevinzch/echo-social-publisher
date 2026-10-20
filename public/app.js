@@ -930,8 +930,14 @@ function renderQueue() {
     return '<a href="javascript:void(0)" class="' + (state.queueTab === t.key ? 'active' : '') + '" data-qt="' + t.key + '">' + t.label + '（' + count + '）</a>';
   }).join('') + '</div>';
 
+  // 由新到旧：最近创建的排在最前（与发布记录一致）
   var posts = state.posts.filter(function (p) { return p.status === state.queueTab; })
-    .sort(function (a, b) { return a.scheduledAt < b.scheduledAt ? -1 : 1; });
+    .sort(function (a, b) {
+      var ak = a.createdAt || a.scheduledAt || '';
+      var bk = b.createdAt || b.scheduledAt || '';
+      if (ak === bk) return (a.scheduledAt || '') < (b.scheduledAt || '') ? 1 : -1;
+      return ak < bk ? 1 : -1;
+    });
 
   var html = '<h2 class="page-title">发布队列</h2><p class="page-sub">调度器每 30 秒检查一次；进程关闭期间到期的任务，下次启动会自动补投。</p>' + tabs;
   if (!posts.length) {

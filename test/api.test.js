@@ -585,3 +585,22 @@ test('分段把所有平台都取消：定时发布被拒绝并指出段号', as
   const posts = await req(base, 'GET', '/api/posts');
   assert.equal(posts.data.posts.length, 0, '拒绝后不应留下任何队列记录');
 });
+
+test('发布队列由新到旧排序（按创建时间，不按计划时间）', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const mk = (id, createdAt, scheduledAt) => app.store.posts.insert({
+    id, platform: 'x', accountId: 'x:1', segments: [{ text: id, media: [] }],
+    scheduledAt, status: 'pending', attempts: 0, createdAt, updatedAt: createdAt
+  });
+  // old 的计划时间更晚，但创建更早 —— 排序应以创建时间为准
+  await mk('old', '2026-10-01T00:00:00.000Z', '2026-12-01T00:00:00.000Z');
+  await mk('new', '2026-10-20T00:00:00.000Z', '2026-11-01T00:00:00.000Z');
+
+  const r = await req(base, 'GET', '/api/posts?status=pending');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.posts[0].id, 'new', '最近创建的应在最前');
+  assert.equal(r.data.posts[1].id, 'old');
+});
