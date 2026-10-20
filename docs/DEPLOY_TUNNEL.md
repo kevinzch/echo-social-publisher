@@ -218,24 +218,46 @@ curl.exe -I https://echo.digitalgarden.party/media/<任一图片>
 
 ---
 
-## 11. 开机自启（Echo + 隧道）
+## 11. 启动方式（Windows 手动 / NAS 自启）
 
-隧道和 Echo 都需要开机自启，否则重启后公网会 502。
+### Windows：建议手动启动
 
-`C:\Users\shibun.tei\cloudflared\start-tunnel.bat`（隧道）已生成；再为 Echo 建一个 `start-echo.bat`：
+本机开关机不频繁，**不推荐开机自启**——WiFi 连接需要时间，登录瞬间启动隧道必然失败。
 
-```bat
-@echo off
-cd /d "C:\Users\shibun.tei\WorkBuddy AI\Echo"
-node server/main.js
+| 脚本 | 作用 | 说明 |
+|---|---|---|
+| `Echo\start-echo.bat` | 启动 Echo 服务 | 本地 HTTP 服务，不依赖网络 |
+| `C:\Users\shibun.tei\cloudflared\start-tunnel.bat` | 启动隧道 | **内置网络等待**：先探测网络（最多 5 分钟），就绪后才启动；隧道退出后 10 秒自动重试 |
+
+手动使用：先双击 `start-echo.bat`，再双击 `start-tunnel.bat`（两个窗口都保持打开）。
+
+**如果之前注册过任务计划，先删掉**（否则仍会在登录瞬间启动）：
+
+```powershell
+schtasks /delete /tn "Echo Server" /f
+schtasks /delete /tn "Echo Tunnel" /f
 ```
 
-然后注册两个登录时任务：
+> 提示"找不到任务"说明本来就没有，忽略即可。
+
+### 如果确实需要开机自启（Windows）
+
+脚本已内置网络等待，但仍建议给隧道加 2 分钟延迟：
 
 ```powershell
 schtasks /create /tn "Echo Server" /tr "C:\Users\shibun.tei\WorkBuddy AI\Echo\start-echo.bat" /sc onlogon
-schtasks /create /tn "Echo Tunnel" /tr "C:\Users\shibun.tei\cloudflared\start-tunnel.bat" /sc onlogon
+schtasks /create /tn "Echo Tunnel" /tr "C:\Users\shibun.tei\cloudflared\start-tunnel.bat" /sc onlogon /delay 0002:00
 ```
+
+### NAS：docker compose（无需 bat）
+
+`docker-compose.yml` 已配置好，迁移后由 Docker 负责：
+
+- `restart: unless-stopped` —— 容器崩溃/NAS 重启后自动拉起
+- `depends_on: condition: service_healthy` —— 等 Echo 健康检查通过再启动隧道（Dockerfile 里已有 `HEALTHCHECK`）
+- cloudflared 自身有断线重连，网络恢复后自动恢复
+
+详见 `docs/MIGRATE_TO_NAS.md`。
 
 ---
 
