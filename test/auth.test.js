@@ -245,3 +245,51 @@ test('手动令牌：仅支持 Threads；格式校验', async () => {
     /格式不正确/
   );
 });
+
+test('publicView：access token 过期但有 refresh token → refreshable（不应显示为失效）', () => {
+  const svc = new AccountService(makeStore(), { x: { clientId: 'x' } });
+  const base = {
+    id: 'x:1', platform: 'x', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() - 1000 }
+  };
+  const v = svc.publicView(base);
+  assert.equal(v.tokenStatus, 'refreshable');
+  assert.equal(v.tokenExpired, false, '可自动续期时不应标记为已失效');
+  assert.ok(v.tokenExpiresAt);
+});
+
+test('publicView：过期且无 refresh token → expired', () => {
+  const svc = new AccountService(makeStore(), {});
+  const v = svc.publicView({
+    id: 'x:2', platform: 'x', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', expiresAt: Date.now() - 1000 }
+  });
+  assert.equal(v.tokenStatus, 'expired');
+  assert.equal(v.tokenExpired, true);
+});
+
+test('publicView：未过期 / 无过期时间 → ok', () => {
+  const svc = new AccountService(makeStore(), {});
+  const fresh = svc.publicView({
+    id: 'bluesky:1', platform: 'bluesky', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600_000 }
+  });
+  assert.equal(fresh.tokenStatus, 'ok');
+
+  const masto = svc.publicView({
+    id: 'mastodon:1', platform: 'mastodon', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'a', expiresAt: null }
+  });
+  assert.equal(masto.tokenStatus, 'ok');
+  assert.equal(masto.tokenExpired, false);
+});
+
+test('publicView：Threads 用 access token 自身续期 → 过期时仍为 refreshable', () => {
+  const svc = new AccountService(makeStore(), {});
+  const v = svc.publicView({
+    id: 'threads:1', platform: 'threads', username: 'u', displayName: 'U',
+    tokens: { accessToken: 'same', refreshToken: 'same', expiresAt: Date.now() - 1000 }
+  });
+  assert.equal(v.tokenStatus, 'refreshable');
+  assert.equal(v.tokenExpired, false);
+});

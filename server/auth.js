@@ -165,6 +165,17 @@ class AccountService {
   }
 
   publicView(account) {
+    const tokens = account.tokens || {};
+    const expiresAt = tokens.expiresAt || null;
+    const isExpired = !!(expiresAt && expiresAt < Date.now());
+    // X / Bluesky 的 access token 只有 2 小时，发布时会用 refresh token 自动续期；
+    // 只有"过期且没有可用的 refresh token"才真正需要重新授权。
+    // 注意：Threads 的 refreshToken 就是 accessToken 本身（用自身续期），需单独判断。
+    const canRefresh = account.platform === 'threads'
+      ? !!tokens.refreshToken
+      : !!(tokens.refreshToken && tokens.refreshToken !== tokens.accessToken);
+    let tokenStatus = 'ok';
+    if (isExpired) tokenStatus = canRefresh ? 'refreshable' : 'expired';
     return {
       id: account.id,
       platform: account.platform,
@@ -172,8 +183,10 @@ class AccountService {
       displayName: account.displayName,
       enabled: account.enabled !== false,
       manual: !!account.manual,
-      tokenExpiresAt: account.tokens && account.tokens.expiresAt ? new Date(account.tokens.expiresAt).toISOString() : null,
-      tokenExpired: !!(account.tokens && account.tokens.expiresAt && account.tokens.expiresAt < Date.now()),
+      tokenExpiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      tokenStatus,
+      // 兼容旧字段：仅在真正无法续期时才算"已过期"
+      tokenExpired: tokenStatus === 'expired',
       createdAt: account.createdAt,
       updatedAt: account.updatedAt
     };

@@ -1034,7 +1034,11 @@ function renderAccounts() {
         '<span class="plt ' + esc(a.platform) + '">' + platformIcon(a.platform, 12) + '</span>' +
         '<span><strong>' + esc(a.displayName || a.username) + '</strong> <span class="muted small">@' + esc(a.username) + '</span></span>' +
         (a.manual ? '<span class="chip">手动令牌</span>' : '') +
-        (a.tokenExpired ? '<span class="chip over">令牌已过期</span>' : '') +
+        (a.tokenStatus === 'expired'
+          ? '<span class="chip over">令牌已失效</span>'
+          : (a.tokenStatus === 'refreshable'
+            ? '<span class="chip warn" title="access token 已到期，下次发布会自动用 refresh token 续期，无需操作">待自动续期</span>'
+            : '')) +
         '<span class="spacer"></span>' +
         '<button class="btn sm danger" data-unbind="' + esc(a.id) + '">解绑</button></div>';
     });
