@@ -4,9 +4,9 @@
  * - 认证：OAuth 2.0 code → 短期 token → th_exchange_token 换 60 天长 token
  *         → th_refresh_token 续期（令牌满 24h 且在有效期内可续）
  * - 发布：创建 container（TEXT / IMAGE / CAROUSEL）→ threads_publish
+ *         分段通过 container 的 reply_to_id 串成 thread 链（回复上一条）
  *         图片要求公网可访问 image_url（本地图片由本服务 /media 路由提供，
  *         公网可达性依赖 THREADS_IMAGE_BASE_URL 配置，见 docs/ARCHITECTURE.md §5.3）
- * - Threads API 无原生 thread 链，分段默认顺序逐条发布（base 实现）
  */
 'use strict';
 const { PlatformAdapter } = require('./base');
@@ -181,18 +181,22 @@ class ThreadsAdapter extends PlatformAdapter {
     const accessToken = account.tokens.accessToken;
     // 图片统一换成公网可达 URL
     const images = (msg.media || []).map((m) => ({ ...m, url: this._publicUrl(m) }));
+    // 分段串 thread：container 上带 reply_to_id（回复上一条已发布的帖子）
+    const reply = msg.replyToId ? { reply_to_id: String(msg.replyToId) } : {};
     let containerId;
 
     if (images.length === 0) {
       containerId = await this._createContainer(accessToken, {
         media_type: 'TEXT',
-        text: msg.text
+        text: msg.text,
+        ...reply
       });
     } else if (images.length === 1) {
       containerId = await this._createContainer(accessToken, {
         media_type: 'IMAGE',
         image_url: images[0].url,
-        text: msg.text
+        text: msg.text,
+        ...reply
       });
     } else {
       const children = [];
@@ -205,7 +209,8 @@ class ThreadsAdapter extends PlatformAdapter {
       containerId = await this._createContainer(accessToken, {
         media_type: 'CAROUSEL',
         children: children.join(','),
-        text: msg.text
+        text: msg.text,
+        ...reply
       });
       await this._waitForContainer(accessToken, containerId);
     }

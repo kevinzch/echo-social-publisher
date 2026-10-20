@@ -180,12 +180,12 @@ test('publishPost 多图：儿童 IMAGE 容器 + CAROUSEL 父容器', async (t) 
   assert.equal(r.platformPostId, 'pub-c');
 });
 
-test('publishThread 顺序逐条发布（Threads 无原生链）', async (t) => {
-  const publishedTexts = [];
+test('publishThread：每段用 reply_to_id 回复上一条，形成 thread 链', async (t) => {
+  const forms = [];
   let n = 0;
   const server = await startMock((req) => {
     if (req.path === '/v1.0/me/threads' && req.method === 'POST') {
-      publishedTexts.push(req.form.text);
+      forms.push(req.form);
       return { body: { id: 'c' + (++n) } };
     }
     if (req.path === '/v1.0/me/threads_publish') return { body: { id: 'p' + n } };
@@ -197,9 +197,37 @@ test('publishThread 顺序逐条发布（Threads 无原生链）', async (t) => 
     { username: 'thtester', tokens: { accessToken: 'tok' } },
     [{ text: '段落一' }, { text: '段落二' }, { text: '段落三' }]
   );
-  assert.deepEqual(publishedTexts, ['段落一', '段落二', '段落三']);
+
+  assert.deepEqual(forms.map((f) => f.text), ['段落一', '段落二', '段落三']);
+  // 首条不带 reply_to_id，后续每条回复上一条已发布的帖子 id
+  assert.equal(forms[0].reply_to_id, undefined);
+  assert.equal(forms[1].reply_to_id, 'p1');
+  assert.equal(forms[2].reply_to_id, 'p2');
   assert.equal(results.length, 3);
   assert.equal(results[2].platformPostId, 'p3');
+});
+
+test('publishPost：带图 + replyToId 时容器同时带 image_url 与 reply_to_id', async (t) => {
+  let form = null;
+  let n = 0;
+  const server = await startMock((req) => {
+    if (req.path === '/v1.0/me/threads' && req.method === 'POST') {
+      form = req.form;
+      return { body: { id: 'c' + (++n) } };
+    }
+    if (req.path === '/v1.0/me/threads_publish') return { body: { id: 'p' + n } };
+    if (req.method === 'GET') return { body: { status: 'FINISHED', permalink: 'https://www.threads.net/t/p' + n } };
+    return null;
+  });
+  t.after(() => server.close());
+
+  await makeAdapter(baseUrlOf(server), 'https://public.example.com').publishPost(
+    { username: 'u', tokens: { accessToken: 'tok' } },
+    { text: '带图回复', media: [{ id: 'm1', ext: '.jpg' }], replyToId: 'p-root' }
+  );
+  assert.equal(form.media_type, 'IMAGE');
+  assert.equal(form.reply_to_id, 'p-root');
+  assert.ok(form.image_url.includes('/media/m1.jpg'));
 });
 
 test('媒体处理失败（ERROR 状态）抛出可读错误', async (t) => {
