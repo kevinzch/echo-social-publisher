@@ -439,9 +439,8 @@ function renderSegments() {
         '<span class="plt ' + esc(pid) + '">' + platformIcon(pid, 12) + '</span></label>';
     });
     html += '</div>';
-    // 文本预览
-    var preview = seg.text.length > 140 ? seg.text.slice(0, 140) + '…' : seg.text;
-    html += '<div class="seg-text small muted">' + esc(preview).replace(/\n/g, '<br>') + '</div>';
+    // 文本预览（完整显示，不截断；换行与长串由 CSS 处理）
+    html += '<div class="seg-text small muted">' + esc(seg.text).replace(/\n/g, '<br>') + '</div>';
     // 图片预览（只读；添加/删除在输入框下方的媒体条操作）
     if ((seg.media || []).length) {
       html += '<div class="seg-media">';
@@ -515,8 +514,17 @@ function renderComposer() {
     });
   });
 
+  // 平台规则：结构化列出字数 / 图片数量 / 单图大小 / 每日上限
   var limitsHtml = (state.config.platforms || []).map(function (p) {
-    return '<div class="small muted" style="margin:2px 0"><strong>' + esc(p.name.split(' ')[0]) + '</strong>：' + esc(p.limits.note) + '</div>';
+    var lim = p.limits;
+    var rows = [];
+    rows.push('字数 ' + lim.maxChars + (lim.weighted ? '（加权，链接按 23 计）' : ''));
+    rows.push('图片 ' + lim.maxImages + ' 张/段 · 单张 ≤' + EchoPreflight.formatBytes(lim.maxImageBytes));
+    if (lim.dailyPostCap) rows.push('每日 ≤' + lim.dailyPostCap + ' 条');
+    return '<div class="plat-rule">' +
+      '<div class="plat-rule-head"><span class="plt ' + esc(p.id) + '">' + platformIcon(p.id, 10) + '</span>' +
+      '<strong>' + esc(p.name) + '</strong></div>' +
+      '<div class="plat-rule-body">' + esc(rows.join(' · ')) + '</div></div>';
   }).join('');
 
   // 默认定时时间：1 小时后取整 5 分钟

@@ -59,6 +59,12 @@ body {
 .sched-state { font-size: 12px; color: var(--text-3); }
 .build-stamp { margin-top: 4px; font-size: 10px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; opacity: .75; }
 
+/* 写作台右侧「平台规则」 */
+.plat-rule { padding: 7px 0; border-top: 1px solid var(--border); }
+.plat-rule:first-child { border-top: 0; padding-top: 2px; }
+.plat-rule-head { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.plat-rule-body { font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }
+
 /* ---------- 主区域 ---------- */
 .main { flex: 1; padding: 24px 28px 60px; max-width: 1080px; margin: 0 auto; width: 100%; }
 .loading { color: var(--text-3); padding: 40px 0; }
@@ -104,7 +110,9 @@ textarea { width: 100%; resize: vertical; }
 label.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 
 /* ---------- 编辑器 ---------- */
-.composer-grid { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: start; }
+/* minmax(0,1fr)：防止超长不换行文本把左栏撑宽、挤压右侧栏 */
+.composer-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+.composer-grid > * { min-width: 0; }
 @media (max-width: 900px) { .composer-grid { grid-template-columns: 1fr; } }
 .editor-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
 #composer-text {
@@ -115,7 +123,11 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .seg-card {
   border: 1px solid var(--border); border-radius: 10px; padding: 12px;
   background: #fafafa;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+/* 分段文本完整显示，长串（无空格）也强制换行 */
+.seg-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .seg-card.over { border-color: var(--err); background: var(--err-bg); }
 
 /* 含链接分段：X 按 $0.20/条计费，醒目提示 */

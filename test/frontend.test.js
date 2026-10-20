@@ -191,6 +191,22 @@ test('发布前预检与部分成功保留内容', () => {
   assert.match(css, /\.seg-card\.has-issue/);
 });
 
+test('分段卡片完整显示长文本，长串不撑宽布局', () => {
+  // 不再截断到 140 字
+  assert.ok(appJs.indexOf('slice(0, 140)') === -1, '分段文本不应再截断');
+  assert.match(appJs, /class="seg-text small muted">' \+ esc\(seg\.text\)/);
+  // 网格列必须 minmax(0,1fr)，否则长串会把左栏撑宽
+  assert.match(css, /\.composer-grid\s*\{[^}]*minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.composer-grid\s*>\s*\*\s*\{[^}]*min-width:\s*0/);
+  assert.match(css, /\.seg-text\s*\{[^}]*overflow-wrap:\s*anywhere/);
+});
+
+test('写作台平台规则结构化展示', () => {
+  assert.match(appJs, /plat-rule-head/);
+  assert.match(appJs, /单张 ≤/);
+  assert.match(css, /\.plat-rule/);
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
