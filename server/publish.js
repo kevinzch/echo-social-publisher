@@ -3,6 +3,7 @@
  * 输入 Post 记录 → 校验 → 令牌刷新 → 发布 → 落库
  */
 'use strict';
+const fs = require('fs');
 const ArrayFrom = (s) => Array.from(String(s || ''));
 const { getPlatform } = require('./platforms');
 const { MediaStore } = require('./media');
@@ -54,7 +55,12 @@ class Publisher {
         if (!limits.imageMimes.includes(record.mime)) {
           throw new Error(`第 ${i + 1} 段图片 ${record.name} 格式 ${record.mime} 不被 ${platform.constructor.name} 支持`);
         }
-        media.push({ ...record, url: this.media.urlFor(record, this.mediaBaseUrl) });
+        // 适配器上传二进制需要本地路径；Threads 需要公网 URL——两者都带上
+        const filePath = this.media.pathOf(record);
+        if (!fs.existsSync(filePath)) {
+          throw new Error(`第 ${i + 1} 段图片文件缺失（${record.name}），请重新上传`);
+        }
+        media.push({ ...record, path: filePath, url: this.media.urlFor(record, this.mediaBaseUrl) });
       }
       if (media.length > limits.maxImages) {
         throw new Error(`第 ${i + 1} 段图片数量超过 ${platform.constructor.name} 上限（${media.length}/${limits.maxImages}）`);
