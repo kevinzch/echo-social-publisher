@@ -242,6 +242,55 @@ test('媒体处理失败（ERROR 状态）抛出可读错误', async (t) => {
       { username: 'u', tokens: { accessToken: 'tok' } },
       { text: 'x', media: [{ id: 'a', url: 'https://public.example.com/media/a.png' }] }
     ),
-    /Threads 媒体处理失败/
+    /Threads 容器处理失败/
   );
+});
+
+test('纯文字容器也要等 FINISHED 再发布', async (t) => {
+  const order = [];
+  let polls = 0;
+  const server = await startMock((req) => {
+    if (req.path === '/v1.0/me/threads' && req.method === 'POST') { order.push('create'); return { body: { id: 'c9' } }; }
+    if (req.method === 'GET' && req.path === '/v1.0/c9') {
+      polls++;
+      order.push('poll' + polls);
+      return { body: { status: polls >= 2 ? 'FINISHED' : 'IN_PROGRESS' } };
+    }
+    if (req.path === '/v1.0/me/threads_publish') { order.push('publish'); return { body: { id: 'p9' } }; }
+    if (req.method === 'GET') return { body: { status: 'FINISHED', permalink: 'https://www.threads.net/t/p9' } };
+    return null;
+  });
+  t.after(() => server.close());
+
+  const r = await makeAdapter(baseUrlOf(server)).publishPost(
+    { username: 'u', tokens: { accessToken: 'tok' } },
+    { text: '纯文字也要等' }
+  );
+  assert.equal(r.platformPostId, 'p9');
+  assert.ok(order.indexOf('publish') > order.indexOf('poll1'), '发布必须发生在轮询之后');
+  assert.ok(polls >= 2, '应等到 FINISHED');
+});
+
+test('发布报 code 24 时重建容器重试一次', async (t) => {
+  let created = 0;
+  let publishes = 0;
+  const server = await startMock((req) => {
+    if (req.path === '/v1.0/me/threads' && req.method === 'POST') { created++; return { body: { id: 'c' + created } }; }
+    if (req.method === 'GET' && req.path.startsWith('/v1.0/c')) return { body: { status: 'FINISHED', permalink: 'https://www.threads.net/t/x' } };
+    if (req.path === '/v1.0/me/threads_publish') {
+      publishes++;
+      if (publishes === 1) return { status: 400, body: { error: { code: 24, message: 'The requested resource does not exist' } } };
+      return { body: { id: 'p' + created } };
+    }
+    return null;
+  });
+  t.after(() => server.close());
+
+  const r = await makeAdapter(baseUrlOf(server)).publishPost(
+    { username: 'u', tokens: { accessToken: 'tok' } },
+    { text: '重试一次' }
+  );
+  assert.equal(created, 2, '应重建容器');
+  assert.equal(publishes, 2, '应重试发布');
+  assert.equal(r.platformPostId, 'p2');
 });

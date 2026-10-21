@@ -76,14 +76,24 @@ class PlatformAdapter {
   async publishThread(account, segments) {
     const results = [];
     let prev = null;
-    for (const seg of segments) {
-      const r = await this.publishPost(account, {
-        text: seg.text,
-        media: seg.media || [],
-        replyToId: prev ? prev.platformPostId : null
-      });
-      results.push(r);
-      prev = r;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      try {
+        const r = await this.publishPost(account, {
+          text: seg.text,
+          media: seg.media || [],
+          replyToId: prev ? prev.platformPostId : null
+        });
+        results.push(r);
+        prev = r;
+      } catch (err) {
+        // 线程是逐条发的：前面几段可能已经发出去了，把结果带出去，
+        // 让上层能显示"已发布 N/M 段"并提供链接
+        err.partialResults = results;
+        err.failedIndex = i;
+        err.totalSegments = segments.length;
+        throw err;
+      }
     }
     return results;
   }

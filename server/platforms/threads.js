@@ -136,19 +136,21 @@ class ThreadsAdapter extends PlatformAdapter {
     return String(res.json.id);
   }
 
-  async _waitForContainer(accessToken, containerId) {
-    // 图片/轮播容器需要等待处理完成；文本容器通常立即可用
+  async _waitForContainer(accessToken, containerId, timeoutMs) {
+    // 所有容器（含纯文字/回复）都要等 FINISHED 再发布，否则会报
+    // "The requested resource does not exist / Media not found"
     const url = new URL(`${this.config.threads.apiBaseUrl}/v1.0/${containerId}`);
-    url.searchParams.set('fields', 'status');
+    url.searchParams.set('fields', 'status,error_message');
     url.searchParams.set('access_token', accessToken);
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + (timeoutMs || 30_000);
     while (Date.now() < deadline) {
       const res = await httpRequest(url.toString(), { timeoutMs: 15_000 });
       if (res.status !== 200) return; // 状态端点不可用时直接尝试发布
       const status = res.json && res.json.status;
       if (status === 'FINISHED' || status === 'PUBLISHED') return;
       if (status === 'ERROR' || status === 'EXPIRED') {
-        throw new Error(`Threads 媒体处理失败（${status}），请检查图片 URL 是否公网可访问`);
+        const detail = (res.json && res.json.error_message) || '';
+        throw new Error(`Threads 容器处理失败（${status}）${detail ? '：' + detail : '，请检查图片 URL 是否公网可访问'}`);
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -185,42 +187,43 @@ class ThreadsAdapter extends PlatformAdapter {
     const images = (msg.media || []).map((m) => ({ ...m, url: this._publicUrl(m) }));
     // 分段串 thread：container 上带 reply_to_id（回复上一条已发布的帖子）
     const reply = msg.replyToId ? { reply_to_id: String(msg.replyToId) } : {};
-    let containerId;
 
-    if (images.length === 0) {
-      containerId = await this._createContainer(accessToken, {
-        media_type: 'TEXT',
-        text: msg.text,
-        ...reply
-      });
-    } else if (images.length === 1) {
-      containerId = await this._createContainer(accessToken, {
-        media_type: 'IMAGE',
-        image_url: images[0].url,
-        text: msg.text,
-        ...reply
-      });
-    } else {
+    // 每次调用都新建容器，便于失败后重建重试
+    const buildContainer = async () => {
+      if (images.length === 0) {
+        return this._createContainer(accessToken, { media_type: 'TEXT', text: msg.text, ...reply });
+      }
+      if (images.length === 1) {
+        return this._createContainer(accessToken, {
+          media_type: 'IMAGE', image_url: images[0].url, text: msg.text, ...reply
+        });
+      }
       const children = [];
       for (const img of images) {
-        children.push(await this._createContainer(accessToken, {
-          media_type: 'IMAGE',
-          image_url: img.url
-        }));
+        children.push(await this._createContainer(accessToken, { media_type: 'IMAGE', image_url: img.url }));
       }
-      containerId = await this._createContainer(accessToken, {
-        media_type: 'CAROUSEL',
-        children: children.join(','),
-        text: msg.text,
-        ...reply
+      return this._createContainer(accessToken, {
+        media_type: 'CAROUSEL', children: children.join(','), text: msg.text, ...reply
       });
-      await this._waitForContainer(accessToken, containerId);
+    };
+
+    let containerId = await buildContainer();
+    // 关键：等容器处理完成再发布（纯文字/回复也适用）
+    await this._waitForContainer(accessToken, containerId, 20_000);
+
+    let postId;
+    try {
+      postId = await this._publishContainer(accessToken, containerId);
+    } catch (err) {
+      // 容器失效/已被消费（code 24）→ 重建一个新容器重试一次
+      if (/code"?\s*:\s*24|does not exist|tidak boleh ditemui/i.test(err.message)) {
+        containerId = await buildContainer();
+        await this._waitForContainer(accessToken, containerId, 20_000);
+        postId = await this._publishContainer(accessToken, containerId);
+      } else {
+        throw err;
+      }
     }
-
-    // 单图也等处理完成（更稳）
-    if (images.length === 1) await this._waitForContainer(accessToken, containerId);
-
-    const postId = await this._publishContainer(accessToken, containerId);
     const permalink = await this._fetchPermalink(accessToken, postId);
     return { platformPostId: postId, permalink };
   }

@@ -72,6 +72,7 @@ class Publisher {
     const nowIso = new Date().toISOString();
     await this.store.posts.update(post.id, { status: 'publishing', updatedAt: nowIso });
 
+    let segments = [];
     try {
       const platform = getPlatform(post.platform, this.config);
       if (!platform) throw new Error(`未知平台: ${post.platform}`);
@@ -81,7 +82,7 @@ class Publisher {
       if (!account) throw new Error('目标账号不存在或已解绑');
       if (account.enabled === false) throw new Error('目标账号已停用');
 
-      const segments = this.prepareSegments(platform, post);
+      segments = this.prepareSegments(platform, post);
       const results = await platform.publishThread(account, segments);
 
       const ids = results.map((r) => r.platformPostId).filter(Boolean);
@@ -101,13 +102,22 @@ class Publisher {
       return { ok: true, ids, urls };
     } catch (err) {
       const failAt = new Date().toISOString();
+      // 部分成功：线程前几段可能已经发出，保留结果与链接，避免"看起来全失败"
+      const partial = Array.isArray(err.partialResults) ? err.partialResults : [];
+      const total = err.totalSegments || segments.length;
+      const message = partial.length
+        ? `已发布 ${partial.length}/${total} 段，第 ${err.failedIndex + 1} 段失败：${err.message}`
+        : err.message;
       // 注意：attempts 由调度器统一递增，这里不重复计数
       await this.store.posts.update(post.id, {
         status: 'failed',
-        error: err.message,
+        error: message,
+        result: partial.length
+          ? { ids: partial.map((r) => r.platformPostId).filter(Boolean), urls: partial.map((r) => r.permalink).filter(Boolean) }
+          : null,
         updatedAt: failAt
       });
-      await this.store.log('error', 'publish', `发布失败: ${err.message}`, { postId: post.id });
+      await this.store.log('error', 'publish', `发布失败: ${message}`, { postId: post.id });
       throw err;
     }
   }
