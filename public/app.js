@@ -426,6 +426,19 @@ function segmentHasContent(i) {
   return !!String(state.segTexts[i] || '').trim() || (state.segMedia[i] || []).length > 0;
 }
 
+/** 上移/下移分段：四个平行数组一起交换，保持文字/图片/平台开关/手动标记同步 */
+function moveSegment(i, dir) {
+  var j = i + dir;
+  if (j < 0 || j >= state.segTexts.length) return -1;
+  [state.segTexts, state.segMedia, state.segExclude, state.segManual].forEach(function (arr) {
+    var tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  });
+  state.confirmDelSeg = null;
+  return j;
+}
+
 function segMediaHtml(i) {
   var ids = state.segMedia[i] || [];
   if (!ids.length) return '';
@@ -481,7 +494,14 @@ function renderSegments(focusIndex, caret) {
       '<div class="seg-media-wrap" data-media-for="' + i + '">' + segMediaHtml(i) + '</div>' +
       '<div class="seg-foot"><button class="btn sm ghost" data-add-media="' + i + '">' +
       iconSvg(ICON_IMAGE, 13) + ' 添加图片</button>' +
-      '<span class="small muted">Ctrl+V 可直接粘贴截图</span></div>' +
+      '<span class="small muted">Ctrl+V 可直接粘贴截图</span>' +
+      '<span class="spacer"></span>' +
+      '<span class="seg-move">' +
+      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="-1" title="上移"' +
+      (i === 0 ? ' disabled' : '') + '>↑</button>' +
+      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="1" title="下移"' +
+      (i === state.segTexts.length - 1 ? ' disabled' : '') + '>↓</button>' +
+      '</span></div>' +
       '</div>';
   });
   html += '<button class="btn sm add-seg" id="btn-add-seg">＋ 添加分段</button>';
@@ -809,6 +829,17 @@ function bindComposerEvents() {
       var xi = parseInt(cancelDel.dataset.cancelDel, 10);
       state.confirmDelSeg = null;
       refreshSegmentCard(xi);
+      return;
+    }
+    var moveBtn = ev.target.closest('[data-move-seg]');
+    if (moveBtn && !moveBtn.disabled) {
+      var mi = parseInt(moveBtn.dataset.moveSeg, 10);
+      var dir = parseInt(moveBtn.dataset.dir, 10);
+      var to = moveSegment(mi, dir);
+      if (to >= 0) {
+        persistLocal();
+        renderSegments(to, null);
+      }
       return;
     }
     var rm = ev.target.closest('[data-rm-media]');

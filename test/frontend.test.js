@@ -274,3 +274,14 @@ test('有内容的分段删除需二次确认', () => {
   assert.match(appJs, /if \(segmentHasContent\(di\)\)/);
   assert.match(css, /\.del-confirm/);
 });
+
+test('分段卡片支持上下移动排序', () => {
+  assert.match(appJs, /function moveSegment/);
+  assert.match(appJs, /data-move-seg=/);
+  assert.match(appJs, /data-dir="-1"/);
+  assert.match(appJs, /data-dir="1"/);
+  // 首段禁用上移、末段禁用下移
+  assert.match(appJs, /i === 0 \? ' disabled' : ''/);
+  assert.match(appJs, /i === state\.segTexts\.length - 1 \? ' disabled' : ''/);
+  assert.match(css, /\.seg-move-btn/);
+});
