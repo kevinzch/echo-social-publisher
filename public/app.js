@@ -619,10 +619,15 @@ function renderComposer() {
     '      <div class="editor-toolbar">' +
     '        <span class="small muted">共 <strong id="seg-total">1</strong> 段</span>' +
     '        <span class="spacer"></span>' +
-    '        <input type="datetime-local" id="sched-time" value="' + localIso + '">' +
-    '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
+    '        <button class="btn" id="btn-save">💾 保存草稿</button>' +
     '        <button class="btn primary" id="btn-schedule">⏰ 定时发布</button>' +
     '        <button class="btn x" id="btn-publish">🚀 立即发布</button>' +
+    // 定时时间默认隐藏，点「定时发布」后再展开
+    '        <div id="sched-panel" class="sched-panel" hidden>' +
+    '          <input type="datetime-local" id="sched-time" value="' + localIso + '">' +
+    '          <button class="btn primary sm" id="btn-schedule-confirm">确认定时</button>' +
+    '          <button class="btn sm ghost" id="btn-schedule-cancel">取消</button>' +
+    '        </div>' +
     '      </div>' +
     '      <div id="seg-editor" class="seg-list"></div>' +
     '    </div>' +
@@ -785,7 +790,19 @@ function bindComposerEvents() {
   }
 
   $('#btn-save').addEventListener('click', saveDraft);
-  $('#btn-schedule').addEventListener('click', scheduleDraft);
+  // 定时：先展开时间选择，再点「确认定时」提交
+  $('#btn-schedule').addEventListener('click', function () {
+    var panel = $('#sched-panel');
+    if (!panel) return;
+    panel.hidden = false;
+    var t = $('#sched-time');
+    if (t) t.focus();
+  });
+  $('#btn-schedule-confirm').addEventListener('click', scheduleDraft);
+  $('#btn-schedule-cancel').addEventListener('click', function () {
+    var panel = $('#sched-panel');
+    if (panel) panel.hidden = true;
+  });
   $('#btn-publish').addEventListener('click', publishDraft);
 
   $$('.acct-check').forEach(function (c) {

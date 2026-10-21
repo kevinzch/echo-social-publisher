@@ -126,6 +126,12 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
   border-radius: var(--radius) var(--radius) 0 0;
 }
 .editor-toolbar #sched-time { max-width: 200px; }
+/* 定时时间面板：点「定时发布」后展开，作为工具栏第二行 */
+.sched-panel {
+  display: flex; align-items: center; gap: 8px; flex-basis: 100%;
+  padding-top: 9px; margin-top: 2px; border-top: 1px dashed var(--border);
+}
+.sched-panel[hidden] { display: none; }
 @media (max-width: 720px) {
   .editor-toolbar { gap: 6px; }
   .editor-toolbar .spacer { display: none; }

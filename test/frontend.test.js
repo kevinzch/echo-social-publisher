@@ -234,6 +234,11 @@ test('顶部操作栏吸顶，包含保存/定时/立即发布', () => {
   assert.match(toolbar, /id="btn-schedule"/);
   assert.match(toolbar, /id="btn-publish"/);
   assert.match(toolbar, /id="sched-time"/);
+  // 时间选择默认隐藏，点「定时发布」后展开，再点「确认定时」提交
+  assert.match(toolbar, /id="sched-panel" class="sched-panel" hidden/);
+  assert.match(toolbar, /id="btn-schedule-confirm"/);
+  assert.match(toolbar, /id="btn-schedule-cancel"/);
+  assert.match(appJs, /panel\.hidden = false/);
   // 底部不再有重复的操作行
   assert.ok(appJs.indexOf('margin-top:12px">\' +') === -1 || appJs.indexOf('id="btn-publish"') < appJs.indexOf('id="seg-editor"'));
 });
