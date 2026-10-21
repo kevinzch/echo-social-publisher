@@ -29,6 +29,19 @@ function fmtTime(iso) {
   return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
 }
 
+/** 当前时区标签，如 GMT+8（马来西亚/中国均为 +8） */
+function tzLabel() {
+  var off = -new Date().getTimezoneOffset() / 60;
+  var sign = off >= 0 ? '+' : '';
+  return 'GMT' + sign + (Number.isInteger(off) ? off : off.toFixed(1));
+}
+
+/** 时间 + 时区，用于"预计发送时间"等需要明确的场合 */
+function fmtTimeWithZone(iso) {
+  var t = fmtTime(iso);
+  return t === '—' ? t : t + '（' + tzLabel() + '）';
+}
+
 function fmtCountdown(iso) {
   var diff = new Date(iso).getTime() - Date.now();
   if (diff <= 0) return '即将发布';
@@ -872,6 +885,7 @@ function updatePublishRow(accountId, status, detail, urls) {
   } else if (status === 'ok') {
     ico.textContent = '✅';
     det.className = 'publish-detail';
+    det.style.color = '';
     if (urls && urls.length) {
       det.innerHTML = urls.map(function (u) {
         return '<a href="' + esc(u) + '" target="_blank" rel="noopener">查看已发布 ↗</a>';
@@ -879,6 +893,12 @@ function updatePublishRow(accountId, status, detail, urls) {
     } else {
       det.textContent = detail || '成功';
     }
+  } else if (status === 'skip') {
+    // 该平台没有勾选任何分段：不是失败，用中性提示
+    ico.textContent = '➖';
+    det.className = 'publish-detail muted';
+    det.style.color = '';
+    det.textContent = detail || '未包含该平台，已跳过';
   } else if (status === 'fail') {
     ico.textContent = '❌';
     det.className = 'publish-detail';
@@ -894,7 +914,7 @@ function closePublishModal() {
 
 function setComposerBusy(busy) {
   state.publishing = busy;
-  ['btn-publish', 'btn-schedule', 'btn-save'].forEach(function (id) {
+  ['btn-publish', 'btn-schedule', 'btn-save', 'btn-schedule-confirm'].forEach(function (id) {
     var b = $('#' + id);
     if (b) b.disabled = busy;
   });
@@ -1045,12 +1065,12 @@ async function scheduleDraft() {
     });
     created = r.posts || [];
     created.forEach(function (p) {
-      updatePublishRow(p.accountId, 'ok', '已加入队列 · ' + fmtTime(p.scheduledAt));
+      updatePublishRow(p.accountId, 'ok', '已加入队列 · 预计 ' + fmtTimeWithZone(p.scheduledAt));
     });
-    // 未入队的账号标记失败
+    // 未入队的账号：是"该平台所有分段都未勾选"，不是失败，用中性提示
     targets.forEach(function (a) {
       if (!created.some(function (p) { return p.accountId === a.id; })) {
-        updatePublishRow(a.id, 'fail', '未加入队列（该平台没有可发布的分段）');
+        updatePublishRow(a.id, 'skip', '分段未勾选该平台，已跳过');
       }
     });
   } catch (e) {
@@ -1061,10 +1081,14 @@ async function scheduleDraft() {
   var closeBtn2 = $('#publish-close');
   if (closeBtn2) closeBtn2.hidden = false;
 
-  if (!created.length) return;
+  if (!created.length) {
+    toast('没有可入队的内容：请检查分段卡片的平台勾选', 'err');
+    return;
+  }
+  var whenLabel = fmtTimeWithZone(created[0].scheduledAt);
   if (created.length === targets.length) {
     await afterComposeDone();
-    toast('已加入队列：' + created.length + ' 个账号', 'ok');
+    toast('已加入队列：' + created.length + ' 个账号 · 预计 ' + whenLabel, 'ok');
     return;
   }
   // 部分入队：保留内容，取消已入队账号/平台
@@ -1083,7 +1107,8 @@ async function scheduleDraft() {
   okAccs.forEach(function (a) { state.selectedAccounts.delete(a.id); });
   renderSegments();
   updateAccountCheckboxStates();
-  toast('部分入队：' + created.length + '/' + targets.length + '。内容已保留，可修正后重试', 'warn');
+  toast('已加入队列 ' + created.length + ' 个账号 · 预计 ' + whenLabel +
+    '；' + (targets.length - created.length) + ' 个账号因分段未勾选该平台而跳过，内容已保留', 'warn');
 }
 
 /* ---------- 视图：草稿箱 ---------- */
@@ -1150,7 +1175,7 @@ function renderQueue() {
         '<span class="status-dot ' + dot + '"></span>' +
         '<div class="grow">' +
         '<div class="title">' + esc(p.preview || '（无文字）') + '</div>' +
-        '<div class="meta">' + esc(p.accountLabel) + ' · ' + p.segmentsCount + ' 段 · 计划 ' + fmtTime(p.scheduledAt) +
+        '<div class="meta">' + esc(p.accountLabel) + ' · ' + p.segmentsCount + ' 段 · 计划 ' + fmtTimeWithZone(p.scheduledAt) +
         (p.status === 'pending' ? ' · <span data-countdown="' + esc(p.scheduledAt) + '">' + fmtCountdown(p.scheduledAt) + '</span>' : '') +
         (p.status === 'failed' && p.error ? ' · <span style="color:var(--err)">' + esc(p.error) + '</span>' : '') +
         '</div>' +

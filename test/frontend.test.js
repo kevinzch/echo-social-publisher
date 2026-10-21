@@ -252,3 +252,15 @@ test('共享库与页面骨架被正确引用', () => {
   assert.match(appJs, /EchoChars\.analyze/);
   assert.match(appJs, /EchoThreadText\.splitSegments/);
 });
+
+test('定时入队反馈：显示队列状态与带时区的预计时间', () => {
+  assert.match(appJs, /function tzLabel/);
+  assert.match(appJs, /function fmtTimeWithZone/);
+  assert.match(appJs, /已加入队列 · 预计 ' \+ fmtTimeWithZone/);
+  // 未勾选该平台不是失败，用 skip 中性状态
+  assert.match(appJs, /updatePublishRow\(a\.id, 'skip'/);
+  assert.match(appJs, /分段未勾选该平台，已跳过/);
+  assert.match(appJs, /status === 'skip'/);
+  // 队列里的计划时间也带时区
+  assert.match(appJs, /计划 ' \+ fmtTimeWithZone/);
+});
