@@ -264,3 +264,13 @@ test('定时入队反馈：显示队列状态与带时区的预计时间', () =>
   // 队列里的计划时间也带时区
   assert.match(appJs, /计划 ' \+ fmtTimeWithZone/);
 });
+
+test('有内容的分段删除需二次确认', () => {
+  assert.match(appJs, /function segmentHasContent/);
+  assert.match(appJs, /state\.confirmDelSeg = di/);
+  assert.match(appJs, /data-confirm-del=/);
+  assert.match(appJs, /data-cancel-del=/);
+  // 空段直接删除（不进确认态）
+  assert.match(appJs, /if \(segmentHasContent\(di\)\)/);
+  assert.match(css, /\.del-confirm/);
+});

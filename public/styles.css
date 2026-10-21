@@ -182,6 +182,9 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
   font-size: 18px; line-height: 1; cursor: pointer; padding: 0 5px; border-radius: 4px;
 }
 .seg-del:hover { color: var(--err); background: var(--err-bg); }
+/* 有内容的分段删除前二次确认 */
+.del-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--err); }
+.del-confirm .btn { padding: 2px 8px; font-size: 11px; }
 .add-seg { width: 100%; margin-top: 10px; border-style: dashed; justify-content: center; }
 .media-idx {
   position: absolute; right: 2px; bottom: 2px; background: rgba(17,24,39,.72);

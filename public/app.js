@@ -122,6 +122,7 @@ var state = {
   segManual: [],         // [{x:true}, ...] 用户手动设置过平台开关的分段（不再自动套用链接默认）
   segTexts: [],          // 每段文本（编辑器的唯一数据源）
   mediaTargetSeg: 0,     // 文件选择器当前目标分段
+  confirmDelSeg: null,   // 正在等待确认删除的分段索引（有内容时需二次确认）
   publishing: false,
   queueTab: 'pending',
   historyTab: 'all',
@@ -412,7 +413,17 @@ function segHeadHtml(i) {
       ? '<span class="chip issue" title="' + esc(issues.map(function (x) { return x.message; }).join('\n')) + '">⚠ ' + issues.length + ' 项超限</span>'
       : '') +
     '<div class="seg-counts">' + editorPlatformChips(text) + '</div>' +
-    (state.segTexts.length > 1 ? '<button class="seg-del" data-del-seg="' + i + '" title="删除本段">×</button>' : '');
+    (state.segTexts.length > 1
+      ? (state.confirmDelSeg === i
+        ? '<span class="del-confirm">删除本段？' +
+          '<button class="btn sm danger" data-confirm-del="' + i + '">删除</button>' +
+          '<button class="btn sm ghost" data-cancel-del="' + i + '">取消</button></span>'
+        : '<button class="seg-del" data-del-seg="' + i + '" title="删除本段">×</button>')
+      : '');
+}
+
+function segmentHasContent(i) {
+  return !!String(state.segTexts[i] || '').trim() || (state.segMedia[i] || []).length > 0;
 }
 
 function segMediaHtml(i) {
@@ -709,6 +720,7 @@ function bindComposerEvents() {
     }
 
     setSegmentText(i, val);
+    if (state.confirmDelSeg === i) state.confirmDelSeg = null;
     refreshSegmentCard(i);
     autoGrow(ta);
     persistLocal();
@@ -771,9 +783,32 @@ function bindComposerEvents() {
     var del = ev.target.closest('[data-del-seg]');
     if (del) {
       var di = parseInt(del.dataset.delSeg, 10);
+      // 有内容（文字或图片）时先二次确认；空段直接删
+      if (segmentHasContent(di)) {
+        state.confirmDelSeg = di;
+        refreshSegmentCard(di);
+        return;
+      }
+      state.confirmDelSeg = null;
       removeSegmentAt(di);
       persistLocal();
       renderSegments(Math.max(0, di - 1), null);
+      return;
+    }
+    var confirmDel = ev.target.closest('[data-confirm-del]');
+    if (confirmDel) {
+      var ci = parseInt(confirmDel.dataset.confirmDel, 10);
+      state.confirmDelSeg = null;
+      removeSegmentAt(ci);
+      persistLocal();
+      renderSegments(Math.max(0, ci - 1), null);
+      return;
+    }
+    var cancelDel = ev.target.closest('[data-cancel-del]');
+    if (cancelDel) {
+      var xi = parseInt(cancelDel.dataset.cancelDel, 10);
+      state.confirmDelSeg = null;
+      refreshSegmentCard(xi);
       return;
     }
     var rm = ev.target.closest('[data-rm-media]');
