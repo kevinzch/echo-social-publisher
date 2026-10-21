@@ -285,3 +285,23 @@ test('分段卡片支持上下移动排序', () => {
   assert.match(appJs, /i === state\.segTexts\.length - 1 \? ' disabled' : ''/);
   assert.match(css, /\.seg-move-btn/);
 });
+
+test('请求超时与渲染兜底，避免页面卡在加载中', () => {
+  assert.match(appJs, /function api\(method, path, body, opts\)/);
+  assert.match(appJs, /AbortController/);
+  assert.match(appJs, /请求超时（/);
+  assert.match(appJs, /function renderViewError/);
+  assert.match(appJs, /r\.catch\(renderViewError\)/);
+  assert.match(appJs, /btn-view-retry/);
+  // 清理按钮有忙态；指南失败可重试
+  assert.match(appJs, /清理中…/);
+  assert.match(appJs, /btn-guide-retry/);
+  // 未捕获 Promise 异常要提示
+  assert.match(appJs, /unhandledrejection/);
+});
+
+test('自动刷新防重入，避免请求堆积占满并发连接', () => {
+  assert.match(appJs, /var autoRefreshing = false/);
+  assert.match(appJs, /if \(autoRefreshing\) return/);
+  assert.match(appJs, /autoRefreshing = false;\s*\n\s*\}\s*\n\}/);
+});

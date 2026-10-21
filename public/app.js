@@ -95,12 +95,26 @@ function debounce(fn, ms) {
 }
 
 /* ---------- API ---------- */
-async function api(method, path, body) {
-  var res = await fetch(path, {
-    method: method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined
-  });
+async function api(method, path, body, opts) {
+  var timeout = (opts && opts.timeout) || 60000;
+  var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeout) : null;
+  var res;
+  try {
+    res = await fetch(path, {
+      method: method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl ? ctrl.signal : undefined
+    });
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      throw new Error('请求超时（' + Math.round(timeout / 1000) + ' 秒），请刷新页面后重试');
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   var data = {};
   try { data = await res.json(); } catch (e) { /* ignore */ }
   if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
@@ -142,6 +156,10 @@ function connectedOf(platformId) {
 
 /* ---------- 启动 ---------- */
 async function init() {
+  window.addEventListener('unhandledrejection', function (ev) {
+    var msg = ev && ev.reason && ev.reason.message ? ev.reason.message : '请求失败';
+    toast('操作失败：' + msg, 'err');
+  });
   state.config = await api('GET', '/api/config');
   await Promise.all([refreshAccounts(), refreshDrafts(), refreshPosts(), refreshMedia()]);
   state.loaded = true;
@@ -168,12 +186,18 @@ function tickCountdown() {
   });
 }
 
+var autoRefreshing = false;
 async function autoRefresh() {
+  // 防重入：上一次还没回来就跳过，避免请求堆积占满并发连接
+  if (autoRefreshing) return;
+  autoRefreshing = true;
   try {
     if (state.route === 'queue' || state.route === 'history') { await refreshPosts(); renderView(); }
     else if (state.route === 'drafts') { await refreshDrafts(); renderView(); }
     renderBadges();
-  } catch (e) { /* 静默 */ }
+  } catch (e) { /* 静默 */ } finally {
+    autoRefreshing = false;
+  }
 }
 
 async function refreshAccounts() { state.accounts = (await api('GET', '/api/accounts')).accounts; }
@@ -207,15 +231,37 @@ function route() {
 }
 
 function renderView() {
-  switch (state.route) {
-    case 'composer': renderComposer(); break;
-    case 'drafts': renderDrafts(); break;
-    case 'queue': renderQueue(); break;
-    case 'history': renderHistory(); break;
-    case 'accounts': renderAccounts(); break;
-    case 'settings': renderSettings(); break;
-    case 'guide': renderGuide(); break;
+  var fn = {
+    composer: renderComposer,
+    drafts: renderDrafts,
+    queue: renderQueue,
+    history: renderHistory,
+    accounts: renderAccounts,
+    settings: renderSettings,
+    guide: renderGuide
+  }[state.route] || renderComposer;
+
+  try {
+    var r = fn();
+    if (r && typeof r.catch === 'function') r.catch(renderViewError);
+  } catch (err) {
+    renderViewError(err);
   }
+}
+
+/** 渲染失败兜底：给出原因和重试，避免页面卡在"加载中" */
+function renderViewError(err) {
+  var view = $('#view');
+  if (!view) return;
+  var msg = (err && err.message) ? err.message : '未知错误';
+  view.innerHTML = '<h2 class="page-title">页面加载失败</h2>' +
+    '<div class="card"><p class="small" style="color:var(--err)">' + esc(msg) + '</p>' +
+    '<div class="row"><button class="btn primary" id="btn-view-retry">重试</button>' +
+    '<button class="btn" id="btn-view-home">回写作台</button></div></div>';
+  var retry = $('#btn-view-retry');
+  if (retry) retry.addEventListener('click', function () { renderView(); });
+  var home = $('#btn-view-home');
+  if (home) home.addEventListener('click', function () { location.hash = '#/composer'; });
 }
 
 /* ---------- 编辑器：分段模型 ---------- */
@@ -1055,7 +1101,7 @@ async function publishDraft() {
     var acc = targets[i];
     updatePublishRow(acc.id, 'sending');
     try {
-      var r = await api('POST', '/api/compose/publish', { segments: segments, accountIds: [acc.id] });
+      var r = await api('POST', '/api/compose/publish', { segments: segments, accountIds: [acc.id] }, { timeout: 180000 });
       var res = (r.results && r.results[0]) || {};
       if (res.ok) { okAccounts.push(acc); updatePublishRow(acc.id, 'ok', '', res.urls); }
       else { failAccounts.push(acc); updatePublishRow(acc.id, 'fail', res.error || '发布失败'); }
@@ -1620,6 +1666,9 @@ async function renderSettings() {
       mediaCleanupEnabled: form.enabled,
       mediaCleanupDays: form.days
     });
+    // 更新本页快照：否则再次点保存会因旧快照重复弹确认，看起来"没反应"
+    s.mediaCleanupEnabled = form.enabled;
+    s.mediaCleanupDays = form.days;
   }
 
   $('#btn-preview-orphans').addEventListener('click', async function () {
@@ -1650,18 +1699,27 @@ async function renderSettings() {
 
   $('#btn-cleanup-yes').addEventListener('click', async function () {
     var form = readForm();
+    var btn = $('#btn-cleanup-yes');
+    var label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '清理中…'; }
     try {
       await saveSettings(form);
-      var r = await api('POST', '/api/media/cleanup', { days: form.days });
+      var r = await api('POST', '/api/media/cleanup', { days: form.days }, { timeout: 120000 });
       $('#cleanup-confirm').hidden = true;
       toast('已删除 ' + r.removed + ' 张孤儿图片，释放 ' + EchoPreflight.formatBytes(r.freedBytes), 'ok');
       await refreshMedia();
       await renderSettings();
-    } catch (e) { toast(e.message, 'err'); }
+    } catch (e) {
+      toast('清理失败：' + e.message, 'err');
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+    }
   });
 
   $('#btn-save-settings').addEventListener('click', async function () {
     var form = readForm();
+    var btn = $('#btn-save-settings');
+    var label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
     try {
       // 从"关闭"切换到"开启"时，若已有孤儿图片，先让用户确认
       if (form.enabled && !s.mediaCleanupEnabled) {
@@ -1677,7 +1735,10 @@ async function renderSettings() {
       await saveSettings(form);
       toast('设置已保存（重启后 Tunnel 地址需写入 .env 才能持久化）', 'ok');
       await renderSettings();
-    } catch (e) { toast(e.message, 'err'); }
+    } catch (e) {
+      toast('保存失败：' + e.message, 'err');
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+    }
   });
 }
 
@@ -1689,7 +1750,11 @@ async function renderGuide() {
     var r = await api('GET', '/api/apply-guide');
     view.innerHTML = '<h2 class="page-title">API / 开发者账号申请指南</h2>' + renderMarkdown(r.markdown);
   } catch (e) {
-    view.innerHTML = '<h2 class="page-title">申请指南</h2><div class="empty">文档缺失：docs/API_APPLY_GUIDE.md</div>';
+    view.innerHTML = '<h2 class="page-title">申请指南</h2>' +
+      '<div class="card"><p class="small" style="color:var(--err)">加载失败：' + esc(e.message) + '</p>' +
+      '<button class="btn primary sm" id="btn-guide-retry">重试</button></div>';
+    var rb = $('#btn-guide-retry');
+    if (rb) rb.addEventListener('click', renderGuide);
   }
 }
 
