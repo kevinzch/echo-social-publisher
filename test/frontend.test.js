@@ -128,11 +128,16 @@ test('计数 chip 图标与文字同行（不换行）', () => {
   assert.match(chipBlock, /align-items:\s*center/);
 });
 
-test('预览按平台分列渲染（不混排）', () => {
-  assert.match(appJs, /class="preview-col"/);
-  assert.match(appJs, /preview-col-head/);
-  assert.match(css, /\.preview-col\s*\{[^}]*flex-direction:\s*column/);
-  assert.match(css, /\.mock\s*\{[^}]*width:\s*100%/);
+test('预览功能已移除，添加图片使用内联 SVG 图标', () => {
+  assert.ok(appJs.indexOf('btn-preview') === -1, '不应再有预览按钮');
+  assert.ok(appJs.indexOf('renderPreview') === -1, '不应再有 renderPreview');
+  assert.ok(appJs.indexOf('preview-wrap') === -1, '不应再有预览容器');
+  assert.ok(css.indexOf('.preview-wrap') === -1, '预览样式应清理');
+  // 添加图片按钮用 SVG 图标，不再用 emoji
+  assert.match(appJs, /var ICON_IMAGE/);
+  assert.match(appJs, /function iconSvg/);
+  assert.match(appJs, /iconSvg\(ICON_IMAGE, 14\) \+ ' 添加图片/);
+  assert.match(css, /\.btn-ico/);
 });
 
 test('Bluesky / Mastodon 图标与凭据连接表单', () => {

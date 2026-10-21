@@ -64,6 +64,14 @@ function platformIcon(id, size) {
   return '<svg class="plat-ico" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true"><path d="' + d + '" fill="currentColor"/></svg>';
 }
 
+/* ---------- 通用图标（内联 SVG，随文字颜色） ---------- */
+var ICON_IMAGE = 'M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z';
+
+function iconSvg(path, size) {
+  var s = size || 14;
+  return '<svg class="btn-ico" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" aria-hidden="true"><path d="' + path + '" fill="currentColor"/></svg>';
+}
+
 function debounce(fn, ms) {
   var timer = null;
   return function () {
@@ -100,7 +108,6 @@ var state = {
   segExclude: [],        // [['x'], ...] 该分段不发布的平台列表
   segManual: [],         // [{x:true}, ...] 用户手动设置过平台开关的分段（不再自动套用链接默认）
   activeSeg: 0,
-  showPreview: false,
   publishing: false,
   queueTab: 'pending',
   historyTab: 'all',
@@ -299,7 +306,7 @@ function currentSegIndex() {
 function updateActiveSegLabel() {
   var btn = $('#btn-add-image');
   if (!btn) return;
-  btn.textContent = '🖼 添加图片（第 ' + (currentSegIndex() + 1) + ' 段）';
+  btn.innerHTML = iconSvg(ICON_IMAGE, 14) + ' 添加图片（第 ' + (currentSegIndex() + 1) + ' 段）';
 }
 
 /** 写作台媒体条：所有已添加图片，按分段标注，可移除 */
@@ -550,8 +557,7 @@ function renderComposer() {
     '    <div class="card">' +
     '      <div class="editor-toolbar">' +
     '        <button class="btn sm" id="btn-split">✂️ 手动分段</button>' +
-    '        <button class="btn sm" id="btn-add-image">🖼 添加图片（第 1 段）</button>' +
-    '        <button class="btn sm" id="btn-preview">👁 预览</button>' +
+    '        <button class="btn sm" id="btn-add-image">' + iconSvg(ICON_IMAGE, 14) + ' 添加图片（第 1 段）</button>' +
     '        <span class="spacer"></span>' +
     '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
     '      </div>' +
@@ -564,7 +570,6 @@ function renderComposer() {
     '      </div>' +
     '    </div>' +
     '    <div id="seg-list" class="seg-list"></div>' +
-    '    <div id="preview-wrap" style="margin-top:16px"' + (state.showPreview ? '' : ' hidden') + '></div>' +
     '  </div>' +
     '  <aside>' +
     '    <div class="card"><h3>目标账号</h3><div class="account-pick">' + accountsHtml + '</div>' +
@@ -601,7 +606,6 @@ function renderComposer() {
     renderSegments();
     renderMediaStrip();
     updateActiveSegLabel();
-    if (state.showPreview) renderPreview();
     try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
   });
 
@@ -638,12 +642,6 @@ function renderComposer() {
     renderMediaStrip();
     updateActiveSegLabel();
     try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
-  });
-
-  $('#btn-preview').addEventListener('click', function () {
-    state.showPreview = !state.showPreview;
-    $('#preview-wrap').hidden = !state.showPreview;
-    if (state.showPreview) renderPreview();
   });
 
   $('#btn-save').addEventListener('click', saveDraft);
@@ -783,7 +781,6 @@ async function afterComposeDone() {
   state.segMedia = [];
   state.segExclude = [];
   state.segManual = [];
-  state.showPreview = false;
   try { localStorage.removeItem(LS_KEY); } catch (e) { }
   if (state.draftId) {
     try { await api('DELETE', '/api/drafts/' + state.draftId); } catch (e) { /* 忽略 */ }
@@ -874,7 +871,6 @@ async function publishDraft() {
   okAccounts.forEach(function (a) { state.selectedAccounts.delete(a.id); });
   renderSegments();
   updateAccountCheckboxStates();
-  if (state.showPreview) renderPreview();
   toast('部分成功：' + okAccounts.length + '/' + targets.length +
     '。内容已保留，已取消成功平台，可直接重试失败平台', 'warn');
 }
@@ -953,64 +949,7 @@ async function scheduleDraft() {
   okAccs.forEach(function (a) { state.selectedAccounts.delete(a.id); });
   renderSegments();
   updateAccountCheckboxStates();
-  if (state.showPreview) renderPreview();
   toast('部分入队：' + created.length + '/' + targets.length + '。内容已保留，可修正后重试', 'warn');
-}
-
-/* ---------- 视图：预览 ---------- */
-function renderPreview() {
-  var wrap = $('#preview-wrap');
-  var segments = currentSegments().filter(function (s) { return s.text.trim() || (s.media || []).length; });
-  if (!segments.length) { wrap.innerHTML = '<div class="empty">暂无内容可预览</div>'; return; }
-  var targets = state.accounts.filter(function (a) { return !state.selectedAccounts.size || state.selectedAccounts.has(a.id); });
-  var platforms = state.selectedAccounts.size
-    ? Array.from(new Set(targets.map(function (a) { return a.platform; })))
-    : (state.config.platforms || []).map(function (p) { return p.id; });
-  var html = '<div class="card"><h3>预览</h3><div class="preview-wrap">';
-  platforms.forEach(function (pid) {
-    var p = (state.config.platforms || []).find(function (x) { return x.id === pid; });
-    if (!p) return;
-    var acct = targets.find(function (a) { return a.platform === pid; });
-    var name = acct ? (acct.displayName || acct.username) : '我';
-    var user = acct ? acct.username : 'me';
-    // 按分段平台开关过滤：被排除的段不在此平台预览
-    var visible = segments.filter(function (s) { return (s.exclude || []).indexOf(pid) === -1; });
-    // 每个平台独立一列，避免不同平台的帖子在 flex 中混排
-    html += '<div class="preview-col">' +
-      '<div class="preview-col-head">' + platformIcon(pid, 14) + '<span>' + esc(p.name.split(' ')[0]) + ' · @' + esc(user) + '</span></div>';
-    if (!visible.length) {
-      html += '<div class="empty">该平台没有可发布的分段（已被平台开关排除）</div>';
-    } else {
-      visible.forEach(function (seg, i) {
-        html += mockPost(p, name, user, seg, limits(pid));
-        if (i < visible.length - 1) html += '<div class="mock-thread-arrow">↓</div>';
-      });
-    }
-    html += '</div>';
-  });
-  html += '</div></div>';
-  wrap.innerHTML = html;
-}
-
-function mockPost(p, name, user, seg, lim) {
-  var color = p.id === 'x' ? '#0f1419' : p.id === 'threads' ? '#833ab4' : '#4f46e5';
-  var html = '<div class="mock">' +
-    '<div class="mock-head">' +
-    '<div class="mock-avatar" style="background:' + color + '">' + esc(name.slice(0, 1).toUpperCase()) + '</div>' +
-    '<div><div class="mock-name">' + esc(name) + '</div><div class="mock-user">@' + esc(user) + ' · 现在</div></div>' +
-    '</div>' +
-    '<div class="mock-text">' + esc(seg.text) + '</div>';
-  var media = (seg.media || []).map(function (mid) { return state.mediaMap.get(mid); }).filter(Boolean);
-  if (media.length) {
-    var n = Math.min(media.length, lim ? lim.maxImages : 4);
-    html += '<div class="mock-imgs n' + Math.min(n, 4) + '">';
-    media.slice(0, n).forEach(function (m) {
-      html += '<img src="' + esc(m.url) + '" alt="">';
-    });
-    html += '</div>';
-  }
-  html += '</div>';
-  return html;
 }
 
 /* ---------- 视图：草稿箱 ---------- */
@@ -1306,7 +1245,6 @@ function handleGlobalChange(ev) {
   }
   renderSegments();
   updateAccountCheckboxStates();
-  if (state.showPreview) renderPreview();
 }
 
 function handleGlobalClick(ev) {
