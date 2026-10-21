@@ -131,7 +131,7 @@ test('计数 chip 图标与文字同行（不换行）', () => {
 });
 
 test('预览功能已移除，添加图片使用内联 SVG 图标', () => {
-  assert.ok(appJs.indexOf('btn-preview') === -1, '不应再有预览按钮');
+  assert.ok(appJs.indexOf('id="btn-preview"') === -1, '不应再有预览按钮（注意区分 btn-preview-orphans）');
   assert.ok(appJs.indexOf('renderPreview') === -1, '不应再有 renderPreview');
   assert.ok(appJs.indexOf('preview-wrap') === -1, '不应再有预览容器');
   assert.ok(css.indexOf('.preview-wrap') === -1, '预览样式应清理');

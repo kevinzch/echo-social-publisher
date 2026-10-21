@@ -6,6 +6,7 @@ const path = require('path');
 const { getPlatform, listPlatforms } = require('./platforms');
 const ThreadText = require('../shared/threadText');
 const EchoPreflight = require('../shared/preflight');
+const { findOrphans, cleanupOrphans } = require('./mediaCleanup');
 
 const { matchRoute, sendJson, sendError, readJsonBody } = require('./http');
 
@@ -472,6 +473,8 @@ function makeRoutes(ctx) {
           defaultQueueTimes: store.settings.defaultQueueTimes || ['09:00', '12:00', '18:00'],
           threadsImageBaseUrl: config.threads.imageBaseUrl,
           logRetention: store.settings.logRetention || config.logRetention,
+          mediaCleanupEnabled: !!store.settings.mediaCleanupEnabled,
+          mediaCleanupDays: store.settings.mediaCleanupDays == null ? 0 : store.settings.mediaCleanupDays,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
       })
@@ -484,6 +487,8 @@ function makeRoutes(ctx) {
           const patch = {};
           if (typeof body.defaultQueueTimes !== 'undefined') patch.defaultQueueTimes = body.defaultQueueTimes;
           if (typeof body.logRetention === 'number') patch.logRetention = Math.max(10, Math.min(5000, body.logRetention));
+          if (typeof body.mediaCleanupEnabled === 'boolean') patch.mediaCleanupEnabled = body.mediaCleanupEnabled;
+          if (typeof body.mediaCleanupDays === 'number') patch.mediaCleanupDays = Math.max(0, Math.min(3650, Math.floor(body.mediaCleanupDays)));
           const saved = store.saveSettings(patch);
           if (typeof body.threadsImageBaseUrl === 'string') {
             // 运行时覆盖（本次进程有效；持久化需写入 .env 的 THREADS_IMAGE_BASE_URL）
@@ -518,6 +523,35 @@ function makeRoutes(ctx) {
           sendJson(res, 200, { markdown: md });
         } catch {
           sendError(res, 404, '指南文档缺失');
+        }
+      }
+    },
+    {
+      method: 'GET', pattern: '/api/media/orphans',
+      handler: async (req, res) => {
+        const url = new URL(req.url, 'http://x');
+        const raw = parseInt(url.searchParams.get('days') || '0', 10);
+        const days = Number.isFinite(raw) ? Math.max(0, Math.min(3650, raw)) : 0;
+        const orphans = findOrphans({ store, media, days });
+        sendJson(res, 200, {
+          days,
+          count: orphans.length,
+          totalBytes: orphans.reduce((sum, m) => sum + (m.size || 0), 0),
+          orphans: orphans.map((m) => ({ id: m.id, name: m.name, size: m.size, createdAt: m.createdAt }))
+        });
+      }
+    },
+    {
+      method: 'POST', pattern: '/api/media/cleanup',
+      handler: async (req, res) => {
+        try {
+          const body = await readJsonBody(req).catch(() => ({}));
+          const raw = Number(body && body.days);
+          const days = Number.isFinite(raw) ? Math.max(0, Math.min(3650, Math.floor(raw))) : 0;
+          const r = await cleanupOrphans({ store, media, days });
+          sendJson(res, 200, { ok: true, days, ...r });
+        } catch (err) {
+          sendError(res, 400, err.message);
         }
       }
     },

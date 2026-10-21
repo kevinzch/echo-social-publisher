@@ -22,8 +22,9 @@ class Scheduler {
    * @param {number} deps.maxAttempts
    * @param {number[]} deps.backoffMinutes
    * @param {() => number} deps.nowFn 测试用可注入时钟
+   * @param {(now:number)=>Promise<void>} [deps.mediaCleanup] 孤儿图片清理钩子（每 24h 最多一次）
    */
-  constructor({ store, executor, intervalMs, maxAttempts, backoffMinutes, nowFn }) {
+  constructor({ store, executor, intervalMs, maxAttempts, backoffMinutes, nowFn, mediaCleanup }) {
     this.store = store;
     this.executor = executor;
     this.intervalMs = intervalMs || 30_000;
@@ -33,6 +34,8 @@ class Scheduler {
     this.timer = null;
     this.running = false;
     this.onEvent = null; // (type, data) => void，用于测试观测
+    this.mediaCleanup = typeof mediaCleanup === 'function' ? mediaCleanup : null;
+    this.lastCleanupAt = 0;
   }
 
   start() {
@@ -66,8 +69,21 @@ class Scheduler {
       for (const post of due) {
         await this._process(post, now);
       }
+      await this._maybeCleanup(now);
     } finally {
       this.running = false;
+    }
+  }
+
+  /** 每 24 小时最多触发一次孤儿图片清理（是否启用由外部钩子判断） */
+  async _maybeCleanup(now) {
+    if (!this.mediaCleanup) return;
+    if (now - this.lastCleanupAt < 24 * 3600 * 1000) return;
+    this.lastCleanupAt = now;
+    try {
+      await this.mediaCleanup(now);
+    } catch (err) {
+      this._emit('cleanup-failed', { error: err.message });
     }
   }
 

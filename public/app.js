@@ -1560,8 +1560,15 @@ function handleGlobalClick(ev) {
 /* ---------- 视图：设置 ---------- */
 async function renderSettings() {
   var view = $('#view');
-  var s = { schedulerIntervalMs: 30000, defaultQueueTimes: ['09:00', '12:00', '18:00'], threadsImageBaseUrl: '' };
+  var s = {
+    schedulerIntervalMs: 30000,
+    defaultQueueTimes: ['09:00', '12:00', '18:00'],
+    threadsImageBaseUrl: '',
+    mediaCleanupEnabled: false,
+    mediaCleanupDays: 0
+  };
   try { s = await api('GET', '/api/settings').then(function (r) { return r.settings; }); } catch (e) { }
+
   view.innerHTML =
     '<h2 class="page-title">设置</h2>' +
     '<div class="card"><h3>调度</h3>' +
@@ -1575,19 +1582,101 @@ async function renderSettings() {
     '<div class="row"><label style="min-width:170px">图片 Base URL</label>' +
     '<input type="text" id="set-threads-base" value="' + esc(s.threadsImageBaseUrl || '') + '" style="flex:1" placeholder="https://your-tunnel.example.com"></div>' +
     '</div>' +
+    '<div class="card"><h3>图片清理</h3>' +
+    '<p class="small muted">孤儿图片 = 不被任何草稿或发布记录引用的图片（例如传了又删掉、或换了图）。' +
+    '已发布的记录只要还在，其图片就不会被清理。默认关闭。</p>' +
+    '<label class="check"><input type="checkbox" id="set-media-cleanup"' + (s.mediaCleanupEnabled ? ' checked' : '') + '>' +
+    '开启孤儿图片自动清理（每 24 小时一次）</label>' +
+    '<div class="row" style="margin-top:10px"><label style="min-width:170px">保留天数</label>' +
+    '<input type="text" id="set-media-days" value="' + esc(s.mediaCleanupDays) + '" style="width:90px">' +
+    '<span class="small muted">天（0 = 不设门槛，立即清理现有孤儿）</span></div>' +
+    '<div class="row" style="margin-top:10px"><button class="btn sm" id="btn-preview-orphans">预览可清理的图片</button>' +
+    '<span id="orphan-summary" class="small muted"></span></div>' +
+    '<div id="cleanup-confirm" class="cleanup-confirm" hidden>' +
+    '<div id="cleanup-confirm-text" class="small"></div>' +
+    '<div class="row" style="margin-top:8px">' +
+    '<button class="btn primary sm" id="btn-cleanup-yes">确认开启并清理</button>' +
+    '<button class="btn sm" id="btn-cleanup-only">仅开启，暂不清理</button>' +
+    '<button class="btn sm ghost" id="btn-cleanup-cancel">取消</button>' +
+    '</div></div>' +
+    '</div>' +
     '<div class="row"><button class="btn primary" id="btn-save-settings">保存设置</button></div>';
 
-  $('#btn-save-settings').addEventListener('click', async function () {
+  function readForm() {
     var interval = parseInt($('#set-interval').value, 10);
     var times = $('#set-queue-times').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
     var base = $('#set-threads-base').value.trim();
+    var enabled = $('#set-media-cleanup').checked;
+    var days = parseInt($('#set-media-days').value, 10);
+    if (!isFinite(days) || days < 0) days = 0;
+    return { interval: interval, times: times, base: base, enabled: enabled, days: days };
+  }
+
+  async function saveSettings(form) {
+    await api('PUT', '/api/settings', {
+      schedulerIntervalMs: form.interval,
+      defaultQueueTimes: form.times,
+      threadsImageBaseUrl: form.base,
+      mediaCleanupEnabled: form.enabled,
+      mediaCleanupDays: form.days
+    });
+  }
+
+  $('#btn-preview-orphans').addEventListener('click', async function () {
+    var form = readForm();
     try {
-      await api('PUT', '/api/settings', {
-        schedulerIntervalMs: interval,
-        defaultQueueTimes: times,
-        threadsImageBaseUrl: base
-      });
+      var r = await api('GET', '/api/media/orphans?days=' + form.days);
+      var oldest = (r.orphans || []).map(function (o) { return o.createdAt; }).filter(Boolean).sort()[0];
+      $('#orphan-summary').textContent = r.count
+        ? '可清理 ' + r.count + ' 张 · ' + EchoPreflight.formatBytes(r.totalBytes) +
+          (oldest ? '（最早 ' + fmtTime(oldest) + '）' : '')
+        : '没有可清理的孤儿图片';
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#btn-cleanup-cancel').addEventListener('click', function () {
+    $('#cleanup-confirm').hidden = true;
+  });
+
+  $('#btn-cleanup-only').addEventListener('click', async function () {
+    var form = readForm();
+    try {
+      await saveSettings(form);
+      $('#cleanup-confirm').hidden = true;
+      toast('已开启自动清理，现有孤儿图片未删除', 'ok');
+      await renderSettings();
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#btn-cleanup-yes').addEventListener('click', async function () {
+    var form = readForm();
+    try {
+      await saveSettings(form);
+      var r = await api('POST', '/api/media/cleanup', { days: form.days });
+      $('#cleanup-confirm').hidden = true;
+      toast('已删除 ' + r.removed + ' 张孤儿图片，释放 ' + EchoPreflight.formatBytes(r.freedBytes), 'ok');
+      await refreshMedia();
+      await renderSettings();
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#btn-save-settings').addEventListener('click', async function () {
+    var form = readForm();
+    try {
+      // 从"关闭"切换到"开启"时，若已有孤儿图片，先让用户确认
+      if (form.enabled && !s.mediaCleanupEnabled) {
+        var pv = await api('GET', '/api/media/orphans?days=' + form.days);
+        if (pv.count > 0) {
+          $('#cleanup-confirm-text').innerHTML =
+            '当前有 <strong>' + pv.count + '</strong> 张孤儿图片（共 ' + EchoPreflight.formatBytes(pv.totalBytes) + '），' +
+            '开启后会立即删除它们。请选择：';
+          $('#cleanup-confirm').hidden = false;
+          return;
+        }
+      }
+      await saveSettings(form);
       toast('设置已保存（重启后 Tunnel 地址需写入 .env 才能持久化）', 'ok');
+      await renderSettings();
     } catch (e) { toast(e.message, 'err'); }
   });
 }

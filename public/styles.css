@@ -61,6 +61,11 @@ body {
 .build-stamp { margin-top: 4px; font-size: 10px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; opacity: .75; }
 
 /* 写作台右侧「平台规则」 */
+/* 图片清理确认块 */
+.cleanup-confirm {
+  margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid #F7C1C1; background: #FCEBEB; color: #791F1F;
+}
 .plat-rule { padding: 7px 0; border-top: 1px solid var(--border); }
 .plat-rule:first-child { border-top: 0; padding-top: 2px; }
 .plat-rule-head { display: flex; align-items: center; gap: 6px; font-size: 12px; }

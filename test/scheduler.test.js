@@ -140,3 +140,40 @@ test('并发 tick 不重复执行', async () => {
   await Promise.all([sched.tick(), sched.tick(), sched.tick()]);
   assert.equal(maxRunning, 1);
 });
+
+test('孤儿清理钩子：每 24 小时最多触发一次', async () => {
+  const store = await makeStore();
+  let calls = 0;
+  let clock = 1_700_000_000_000;
+  const scheduler = new Scheduler({
+    store,
+    executor: async () => {},
+    intervalMs: 1000,
+    nowFn: () => clock,
+    mediaCleanup: async () => { calls++; }
+  });
+
+  await scheduler.tick();
+  assert.equal(calls, 1, '启动首次 tick 应触发一次');
+
+  clock += 3600 * 1000;
+  await scheduler.tick();
+  assert.equal(calls, 1, '1 小时后不应重复清理');
+
+  clock += 24 * 3600 * 1000;
+  await scheduler.tick();
+  assert.equal(calls, 2, '超过 24 小时应再次触发');
+});
+
+test('孤儿清理钩子异常不影响调度', async () => {
+  const store = await makeStore();
+  const scheduler = new Scheduler({
+    store,
+    executor: async () => {},
+    intervalMs: 1000,
+    nowFn: () => 1_700_000_000_000,
+    mediaCleanup: async () => { throw new Error('boom'); }
+  });
+  await scheduler.tick();
+  assert.ok(true, '不应抛出');
+});

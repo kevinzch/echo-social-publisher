@@ -643,3 +643,53 @@ test('发布前校验：字数超限同样整体拒绝', async (t) => {
   assert.equal(r.status, 400);
   assert.match(r.data.error, /字数/);
 });
+
+test('孤儿图片：预览与清理只删除未被引用的图片', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+  await seedAccount(app, 'x:1', 'x');
+
+  const orphan = await req(base, 'POST', '/api/media', pngRecord());
+  const used = await req(base, 'POST', '/api/media', pngRecord());
+  assert.equal(orphan.status, 200);
+
+  const now = new Date().toISOString();
+  await app.store.posts.insert({
+    id: 'p_orphan_test', platform: 'x', accountId: 'x:1',
+    segments: [{ text: 'hi', media: [used.data.media.id], exclude: [] }],
+    scheduledAt: now, status: 'published', attempts: 0,
+    createdAt: now, updatedAt: now
+  });
+
+  const pv = await req(base, 'GET', '/api/media/orphans?days=0');
+  assert.equal(pv.status, 200);
+  assert.equal(pv.data.count, 1, '只应列出未被引用的图片');
+  assert.equal(pv.data.orphans[0].id, orphan.data.media.id);
+
+  const cl = await req(base, 'POST', '/api/media/cleanup', { days: 0 });
+  assert.equal(cl.data.removed, 1);
+  assert.ok(cl.data.freedBytes > 0);
+
+  const list = await req(base, 'GET', '/api/media-list');
+  assert.ok(list.data.media.some((m) => m.id === used.data.media.id), '被引用的图片必须保留');
+  assert.ok(!list.data.media.some((m) => m.id === orphan.data.media.id), '孤儿图片应已删除');
+});
+
+test('图片清理设置：默认关闭，可开启并保存天数', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  const s1 = await req(base, 'GET', '/api/settings');
+  assert.equal(s1.data.settings.mediaCleanupEnabled, false, '默认必须关闭');
+  assert.equal(s1.data.settings.mediaCleanupDays, 0);
+
+  await req(base, 'PUT', '/api/settings', { mediaCleanupEnabled: true, mediaCleanupDays: 7 });
+  const s2 = await req(base, 'GET', '/api/settings');
+  assert.equal(s2.data.settings.mediaCleanupEnabled, true);
+  assert.equal(s2.data.settings.mediaCleanupDays, 7);
+
+  // 越界值被收敛
+  await req(base, 'PUT', '/api/settings', { mediaCleanupDays: -5 });
+  const s3 = await req(base, 'GET', '/api/settings');
+  assert.equal(s3.data.settings.mediaCleanupDays, 0);
+});

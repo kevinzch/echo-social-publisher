@@ -12,6 +12,7 @@ const { AccountService } = require('./auth');
 const { Publisher } = require('./publish');
 const { Scheduler } = require('./scheduler');
 const { makeRoutes } = require('./routes');
+const { cleanupOrphans } = require('./mediaCleanup');
 const httpUtil = require('./http');
 
 const SHARED_ALLOW = new Set(['chars.js', 'threadText.js', 'preflight.js']);
@@ -27,15 +28,21 @@ function createApp(opt) {
   const store = opt.store || new (require('./store').Store)(cfg.dataDir);
   const accounts = opt.accounts || new AccountService(store, cfg);
   const publisher = new Publisher({ store, config: cfg, accounts });
+  const media = publisher.getMediaStore();
   const scheduler = new Scheduler({
     store,
     executor: (post) => publisher.publishPost(post),
     intervalMs: cfg.schedulerIntervalMs,
     maxAttempts: cfg.maxPublishAttempts,
     backoffMinutes: cfg.retryBackoffMinutes,
-    nowFn: opt.nowFn
+    nowFn: opt.nowFn,
+    // 默认关闭；开启后调度器每 24h 清理一次孤儿图片
+    mediaCleanup: async () => {
+      if (!store.settings.mediaCleanupEnabled) return;
+      const days = store.settings.mediaCleanupDays == null ? 0 : store.settings.mediaCleanupDays;
+      await cleanupOrphans({ store, media, days });
+    }
   });
-  const media = publisher.getMediaStore();
   const routes = makeRoutes({ store, accounts, publisher, scheduler, media, config: cfg });
 
   const publicDir = path.join(cfg.rootDir, 'public');
