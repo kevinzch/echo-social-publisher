@@ -169,13 +169,15 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .seg-plat.no-acct { opacity: .3; cursor: not-allowed; }
 .seg-plat .plt { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; flex: none; }
 .seg-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-/* 就地编辑：每段自己的输入框（无边框，融入卡片） */
+/* 就地编辑：每段自己的输入框（留出内边距，文字不贴边） */
 .seg-input {
-  display: block; width: 100%; border: 0; background: transparent; resize: none;
-  font: inherit; font-size: 14px; line-height: 1.65; color: var(--text);
-  padding: 2px 0 6px; min-height: 72px; outline: none; overflow: hidden;
+  display: block; width: 100%; border: 1px solid var(--border); border-radius: 8px;
+  background: #fff; resize: none;
+  font: inherit; font-size: 14px; line-height: 1.7; color: var(--text);
+  padding: 11px 13px; min-height: 78px; outline: none; overflow: hidden;
 }
 .seg-input::placeholder { color: var(--text-3); }
+.seg-input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 .seg-foot { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
 /* 右下角排序按钮 */
 .seg-move { display: inline-flex; gap: 4px; }

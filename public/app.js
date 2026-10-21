@@ -535,7 +535,7 @@ function focusSegment(i, caret) {
 function autoGrow(ta) {
   if (!ta) return;
   ta.style.height = 'auto';
-  ta.style.height = Math.max(72, ta.scrollHeight) + 'px';
+  ta.style.height = Math.max(78, ta.scrollHeight) + 'px';
 }
 
 function autoGrowAll() {
