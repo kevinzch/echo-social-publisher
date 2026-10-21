@@ -51,14 +51,16 @@ test('发布进程弹窗：逐账号状态与关闭控制', () => {
   assert.match(css, /\.publish-row/);
 });
 
-test('图片交互：输入框添加 + 剪贴板粘贴 + 媒体条 + 清空同步', () => {
-  assert.match(appJs, /id="btn-add-image"/);
+test('分段卡片就地编辑：每段独立输入框 + 卡片内加图 + 粘贴', () => {
+  assert.match(appJs, /class="seg-input" data-seg=/);
+  assert.match(appJs, /data-add-media=/);
+  assert.match(appJs, /seg-media-wrap/);
   assert.match(appJs, /addEventListener\('paste'/);
-  assert.match(appJs, /function renderMediaStrip/);
-  assert.match(appJs, /function syncSegMedia/);
-  assert.match(appJs, /function segmentIndexAt/);
-  assert.ok(appJs.indexOf('data-add-media') === -1, '分段卡片内不应再有添加图片按钮');
-  assert.match(css, /\.media-strip/);
+  assert.match(appJs, /function insertSegment/);
+  assert.match(appJs, /function mergeSegmentIntoPrev/);
+  // 兼容旧习惯：单独一行 --- 仍可切分
+  assert.match(appJs, /splitSegments\(val\)/);
+  assert.match(css, /\.seg-input/);
 });
 
 test('未勾选目标账号时不得默认群发', () => {
@@ -93,9 +95,9 @@ test('目标账号主开关与分段卡片联动', () => {
   assert.match(appJs, /function updateAccountCheckboxStates/);
   assert.match(appJs, /c\.indeterminate = selected && excluded > 0/);
   // 含链接段默认自动取消 X（用户手动改过的段不覆盖）
-  assert.match(appJs, /function syncSegMedia/);
+  assert.match(appJs, /function setSegmentText/);
   assert.match(appJs, /manual\.x/);
-  assert.match(appJs, /LINK_RE\.test\(t\) && ex\.indexOf\('x'\) === -1/);
+  assert.match(appJs, /LINK_RE\.test\(text\) && ex\.indexOf\('x'\) === -1/);
   // 初始不勾选任何目标账号
   assert.match(appJs, /selectedAccounts: new Set\(\)/);
 });
@@ -136,7 +138,7 @@ test('预览功能已移除，添加图片使用内联 SVG 图标', () => {
   // 添加图片按钮用 SVG 图标，不再用 emoji
   assert.match(appJs, /var ICON_IMAGE/);
   assert.match(appJs, /function iconSvg/);
-  assert.match(appJs, /iconSvg\(ICON_IMAGE, 14\) \+ ' 添加图片/);
+  assert.match(appJs, /iconSvg\(ICON_IMAGE, 13\) \+ ' 添加图片/);
   assert.match(css, /\.btn-ico/);
 });
 
@@ -173,8 +175,8 @@ test('分段勾选与目标账号双向同步、空内容重置', () => {
   assert.match(appJs, /state\.selectedAccounts\.add\(a\.id\)/);
   // 取消最后一段 → 取消选中该平台账号
   assert.match(appJs, /state\.selectedAccounts\.delete\(a\.id\)/);
-  // 主开关要覆盖空内容时的占位分段
-  assert.match(appJs, /Math\.max\(texts\.length, state\.segExclude\.length\)/);
+  // 主开关基于 segTexts 覆盖全部分段
+  assert.match(appJs, /var n = Math\.max\(state\.segTexts\.length, 1\)/);
   // 默认值跟随已选账号
   assert.match(appJs, /function defaultSegmentExclude/);
   assert.match(appJs, /targetAccounts\(\)\.forEach/);
@@ -196,14 +198,14 @@ test('发布前预检与部分成功保留内容', () => {
   assert.match(css, /\.seg-card\.has-issue/);
 });
 
-test('分段卡片完整显示长文本，长串不撑宽布局', () => {
-  // 不再截断到 140 字
-  assert.ok(appJs.indexOf('slice(0, 140)') === -1, '分段文本不应再截断');
-  assert.match(appJs, /class="seg-text small muted">' \+ esc\(seg\.text\)/);
+test('分段卡片可直接编辑长文本，长串不撑宽布局', () => {
+  assert.ok(appJs.indexOf('slice(0, 140)') === -1, '分段文本不应截断');
+  // 文本在卡片内的 textarea 里，不再是只读预览
+  assert.match(appJs, /<textarea class="seg-input" data-seg=/);
+  assert.match(css, /\.seg-input\s*\{[^}]*width:\s*100%/);
   // 网格列必须 minmax(0,1fr)，否则长串会把左栏撑宽
   assert.match(css, /\.composer-grid\s*\{[^}]*minmax\(0,\s*1fr\)/);
   assert.match(css, /\.composer-grid\s*>\s*\*\s*\{[^}]*min-width:\s*0/);
-  assert.match(css, /\.seg-text\s*\{[^}]*overflow-wrap:\s*anywhere/);
 });
 
 test('写作台平台规则结构化展示', () => {
@@ -213,9 +215,10 @@ test('写作台平台规则结构化展示', () => {
 });
 
 test('超限图片在卡片缩略图上直接标记', () => {
-  assert.match(appJs, /mediaIssues\[mid\]/);
+  assert.match(appJs, /byMedia\[it\.mediaId\]/);
   assert.match(appJs, /thumb-badge/);
   assert.match(appJs, /media-thumb' \+ \(mis\.length \? ' over' : ''\)/);
+  assert.match(appJs, /media-idx/);
   assert.match(css, /\.media-thumb\.over/);
 });
 

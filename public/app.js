@@ -107,7 +107,8 @@ var state = {
   segMedia: [],          // [[mediaId, ...], ...] 与分段一一对应
   segExclude: [],        // [['x'], ...] 该分段不发布的平台列表
   segManual: [],         // [{x:true}, ...] 用户手动设置过平台开关的分段（不再自动套用链接默认）
-  activeSeg: 0,
+  segTexts: [],          // 每段文本（编辑器的唯一数据源）
+  mediaTargetSeg: 0,     // 文件选择器当前目标分段
   publishing: false,
   queueTab: 'pending',
   historyTab: 'all',
@@ -203,20 +204,21 @@ function renderView() {
   }
 }
 
-/* ---------- 编辑器：分段与计数 ---------- */
+/* ---------- 编辑器：分段模型 ---------- */
+/** 对齐三个附属数组与 segTexts 的长度；新段用当前目标账号推导默认平台状态 */
+function ensureSegmentArrays() {
+  var n = state.segTexts.length;
+  while (state.segMedia.length < n) state.segMedia.push([]);
+  if (state.segMedia.length > n) state.segMedia.length = n;
+  while (state.segExclude.length < n) state.segExclude.push(defaultSegmentExclude());
+  if (state.segExclude.length > n) state.segExclude.length = n;
+  while (state.segManual.length < n) state.segManual.push({});
+  if (state.segManual.length > n) state.segManual.length = n;
+}
+
 function currentSegments() {
-  var ta = $('#composer-text');
-  var texts = ta ? EchoThreadText.splitSegments(ta.value) : [];
-  if (!texts.length) {
-    texts = [ta ? ta.value.trim() : ''];
-  }
-  // 分段数量变化时对齐媒体/平台开关数组
-  while (state.segMedia.length < texts.length) state.segMedia.push([]);
-  if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
-  // 新分段默认所有平台都不勾选（与"目标账号默认不勾选"保持一致）
-  while (state.segExclude.length < texts.length) state.segExclude.push(defaultSegmentExclude());
-  if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
-  return texts.map(function (t, i) {
+  ensureSegmentArrays();
+  return state.segTexts.map(function (t, i) {
     return {
       text: t,
       media: (state.segMedia[i] || []).slice(),
@@ -225,42 +227,52 @@ function currentSegments() {
   });
 }
 
-/** 输入内容变化后同步媒体/平台数组：内容清空时一并清空（修复"图片复活"） */
-function syncSegMedia() {
-  var ta = $('#composer-text');
-  if (!ta) return;
-  var texts = EchoThreadText.splitSegments(ta.value);
-  if (!texts.length) { state.segMedia = []; state.segExclude = []; state.segManual = []; return; }
-  // 分段数量变化时重置手动标记（索引会变）
-  if (state.segManual.length !== texts.length) {
-    state.segManual = texts.map(function () { return {}; });
-  }
-  while (state.segMedia.length < texts.length) state.segMedia.push([]);
-  if (state.segMedia.length > texts.length) state.segMedia.length = texts.length;
-  while (state.segExclude.length < texts.length) state.segExclude.push(defaultSegmentExclude());
-  if (state.segExclude.length > texts.length) state.segExclude.length = texts.length;
-
-  // 含链接段默认自动取消 X（仅"新增链接"时生效；默认本就未勾选，不自动勾回）
-  texts.forEach(function (t, i) {
-    var manual = state.segManual[i] || (state.segManual[i] = {});
-    if (manual.x) return;
-    var ex = state.segExclude[i] || (state.segExclude[i] = []);
-    if (LINK_RE.test(t) && ex.indexOf('x') === -1) ex.push('x');
-  });
+/** 修改某段文本：含链接且用户没手动改过 X 开关时，自动取消该段 X */
+function setSegmentText(i, text) {
+  state.segTexts[i] = text;
+  var manual = state.segManual[i] || (state.segManual[i] = {});
+  if (manual.x) return;
+  var ex = state.segExclude[i] || (state.segExclude[i] = []);
+  if (LINK_RE.test(text) && ex.indexOf('x') === -1) ex.push('x');
 }
 
-/** 主开关：把某平台的勾选状态应用到全部分段（不写手动标记，链接默认仍可在后续输入时生效） */
-function applyPlatformToAll(plat, on) {
-  var ta = $('#composer-text');
-  if (!ta) return;
-  var texts = EchoThreadText.splitSegments(ta.value);
-  // 内容为空时 currentSegments 仍会保留一个占位分段，这里必须一起处理，
-  // 否则"清空内容→勾选账号→重新输入"会出现分段状态没跟着账号走的问题
-  var n = Math.max(texts.length, state.segExclude.length);
-  if (n === 0) {
-    state.segExclude = [defaultSegmentExclude()];
-    n = 1;
+/** 在某段之后插入新段，返回新段索引 */
+function insertSegment(afterIndex, text) {
+  var at = afterIndex + 1;
+  state.segTexts.splice(at, 0, text || '');
+  state.segMedia.splice(at, 0, []);
+  state.segExclude.splice(at, 0, defaultSegmentExclude());
+  state.segManual.splice(at, 0, {});
+  return at;
+}
+
+function removeSegmentAt(i) {
+  if (state.segTexts.length <= 1) {
+    state.segTexts[0] = '';
+    state.segMedia[0] = [];
+    state.segExclude[0] = defaultSegmentExclude();
+    state.segManual[0] = {};
+    return;
   }
+  state.segTexts.splice(i, 1);
+  state.segMedia.splice(i, 1);
+  state.segExclude.splice(i, 1);
+  state.segManual.splice(i, 1);
+}
+
+/** 把第 i 段并入上一段（段首退格） */
+function mergeSegmentIntoPrev(i) {
+  if (i <= 0) return;
+  state.segTexts[i - 1] = (state.segTexts[i - 1] || '') + (state.segTexts[i] || '');
+  state.segMedia[i - 1] = (state.segMedia[i - 1] || []).concat(state.segMedia[i] || []);
+  removeSegmentAt(i);
+}
+
+/** 主开关：把某平台的勾选状态应用到全部分段 */
+function applyPlatformToAll(plat, on) {
+  var n = Math.max(state.segTexts.length, 1);
+  if (!state.segTexts.length) state.segTexts = [''];
+  if (!state.segExclude.length) state.segExclude = [defaultSegmentExclude()];
   for (var i = 0; i < n; i++) {
     var ex = state.segExclude[i] || (state.segExclude[i] = []);
     if (on) state.segExclude[i] = ex.filter(function (p) { return p !== plat; });
@@ -270,9 +282,7 @@ function applyPlatformToAll(plat, on) {
 
 /** 目标账号复选框状态 = 账号是否选中 + 该平台分段是否被部分/全部排除 */
 function updateAccountCheckboxStates() {
-  var ta = $('#composer-text');
-  var texts = ta ? EchoThreadText.splitSegments(ta.value) : [];
-  var n = texts.length;
+  var n = state.segTexts.length;
   $$('.acct-check').forEach(function (c) {
     var acc = state.accounts.find(function (a) { return a.id === c.value; });
     if (!acc) return;
@@ -284,49 +294,6 @@ function updateAccountCheckboxStates() {
     c.checked = selected;
     c.indeterminate = selected && excluded > 0;
   });
-}
-
-/** 光标所在分段索引（按分隔符计数，越界收敛到合法范围） */
-function segmentIndexAt(text, pos) {
-  var texts = EchoThreadText.splitSegments(text || '');
-  if (!texts.length) return 0;
-  var before = String(text || '').slice(0, Math.max(0, pos || 0));
-  var lines = before.split(/\r?\n/);
-  var count = 0;
-  for (var i = 0; i < lines.length; i++) if (lines[i].trim() === '---') count++;
-  return Math.max(0, Math.min(count, texts.length - 1));
-}
-
-function currentSegIndex() {
-  var ta = $('#composer-text');
-  if (!ta) return 0;
-  return segmentIndexAt(ta.value, ta.selectionStart || 0);
-}
-
-function updateActiveSegLabel() {
-  var btn = $('#btn-add-image');
-  if (!btn) return;
-  btn.innerHTML = iconSvg(ICON_IMAGE, 14) + ' 添加图片（第 ' + (currentSegIndex() + 1) + ' 段）';
-}
-
-/** 写作台媒体条：所有已添加图片，按分段标注，可移除 */
-function renderMediaStrip() {
-  var box = $('#media-strip');
-  if (!box) return;
-  var items = [];
-  state.segMedia.forEach(function (ids, segIdx) {
-    (ids || []).forEach(function (id) {
-      var m = state.mediaMap.get(id);
-      if (m) items.push({ m: m, seg: segIdx });
-    });
-  });
-  if (!items.length) { box.hidden = true; box.innerHTML = ''; return; }
-  box.hidden = false;
-  box.innerHTML = items.map(function (it) {
-    return '<div class="media-item"><img src="' + esc(it.m.url) + '" alt="' + esc(it.m.name) + '">' +
-      '<span class="media-seg">第 ' + (it.seg + 1) + ' 段</span>' +
-      '<button class="rm" data-rm-media="' + esc(it.m.id) + '" data-seg="' + it.seg + '" title="移除图片">×</button></div>';
-  }).join('');
 }
 
 function editorPlatformChips(text) {
@@ -384,98 +351,161 @@ function defaultSegmentExclude() {
   return platformIds().filter(function (pid) { return !on[pid]; });
 }
 
-function renderSegments() {
-  var box = $('#seg-list');
-  if (!box) return;
-  var segments = currentSegments();
-  if (!segments.length || (segments.length === 1 && !segments[0].text.trim())) {
-    box.innerHTML = '<div class="empty">输入内容后这里会显示分段卡片（每段独立计数、配图、平台开关）</div>';
-    return;
-  }
-  var plats = visiblePlatforms();
+/* ---------- 编辑器：分段卡片（就地编辑） ---------- */
+/** 卡片预检针对的平台：已选账号优先，否则全部平台 */
+function segWarnPlatforms() {
+  var ids = [];
+  targetAccounts().forEach(function (a) {
+    if (ids.indexOf(a.platform) === -1) ids.push(a.platform);
+  });
+  return ids.length ? ids : visiblePlatforms();
+}
+
+function segmentIssues(i) {
+  var seg = {
+    text: state.segTexts[i] || '',
+    media: state.segMedia[i] || [],
+    exclude: state.segExclude[i] || []
+  };
+  return EchoPreflight.analyze([seg], platformObjects(segWarnPlatforms()), mediaLookup);
+}
+
+function segCardClass(i) {
+  var text = state.segTexts[i] || '';
+  var over = false;
+  var a = EchoChars.analyze(text);
+  (state.config.platforms || []).forEach(function (p) {
+    var c = p.limits.weighted ? a.weighted : a.total;
+    if (c > p.limits.maxChars) over = true;
+  });
+  var excluded = state.segExclude[i] || [];
+  var selectedPlats = [];
+  targetAccounts().forEach(function (a2) {
+    if (selectedPlats.indexOf(a2.platform) === -1) selectedPlats.push(a2.platform);
+  });
+  var allExcluded = selectedPlats.length > 0 &&
+    selectedPlats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
+  return 'seg-card' + (over ? ' over' : '') + (LINK_RE.test(text) ? ' has-link' : '') +
+    (allExcluded ? ' muted-card' : '') + (segmentIssues(i).length ? ' has-issue' : '');
+}
+
+function segHeadHtml(i) {
+  var text = state.segTexts[i] || '';
+  var issues = segmentIssues(i);
+  return '<span class="seg-no">' + (i + 1) + '</span>' +
+    '<span class="muted small">第 ' + (i + 1) + ' 段</span>' +
+    (LINK_RE.test(text) ? '<span class="chip warn" title="X 对含链接的帖子按 $0.20/条计费">含链接</span>' : '') +
+    (issues.length
+      ? '<span class="chip issue" title="' + esc(issues.map(function (x) { return x.message; }).join('\n')) + '">⚠ ' + issues.length + ' 项超限</span>'
+      : '') +
+    '<div class="seg-counts">' + editorPlatformChips(text) + '</div>' +
+    (state.segTexts.length > 1 ? '<button class="seg-del" data-del-seg="' + i + '" title="删除本段">×</button>' : '');
+}
+
+function segMediaHtml(i) {
+  var ids = state.segMedia[i] || [];
+  if (!ids.length) return '';
+  var issues = segmentIssues(i);
+  var byMedia = {};
+  issues.forEach(function (it) {
+    if (it.mediaId) (byMedia[it.mediaId] = byMedia[it.mediaId] || []).push(it);
+  });
+  return '<div class="seg-media">' + ids.map(function (mid, idx) {
+    var m = state.mediaMap.get(mid);
+    if (!m) return '';
+    var mis = byMedia[mid] || [];
+    return '<div class="media-thumb' + (mis.length ? ' over' : '') + '"' +
+      (mis.length ? ' title="' + esc(mis.map(function (x) { return x.message; }).join('\n')) + '"' : '') + '>' +
+      '<img src="' + esc(m.url) + '" alt="' + esc(m.name) + '">' +
+      '<span class="media-idx">' + (idx + 1) + '</span>' +
+      (mis.length ? '<span class="thumb-badge">超限</span>' : '') +
+      '<button class="rm" data-rm-media="' + esc(mid) + '" data-seg="' + i + '" title="移除图片">×</button>' +
+      '</div>';
+  }).join('') + '</div>';
+}
+
+function segPlatsHtml(i) {
   var connectedPlats = {};
   state.accounts.forEach(function (a) { connectedPlats[a.platform] = true; });
-  // 预检问题（按段分组）：已选账号则只校验目标平台，未选则校验全部平台
-  var selectedPlatsForWarn = [];
-  targetAccounts().forEach(function (a) {
-    if (selectedPlatsForWarn.indexOf(a.platform) === -1) selectedPlatsForWarn.push(a.platform);
+  var excluded = state.segExclude[i] || [];
+  var html = '<div class="seg-plats">';
+  visiblePlatforms().forEach(function (pid) {
+    var on = excluded.indexOf(pid) === -1;
+    var hasAccount = !!connectedPlats[pid];
+    html += '<label class="seg-plat' + (on ? '' : ' off') + (hasAccount ? '' : ' no-acct') + '"' +
+      (hasAccount ? '' : ' title="未连接该平台账号，发布时不会发送"') + '>' +
+      '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') +
+      (hasAccount ? '' : ' disabled') + '>' +
+      '<span class="plt ' + esc(pid) + '">' + platformIcon(pid, 12) + '</span></label>';
   });
-  var segIssues = {};
-  EchoPreflight.analyze(segments, platformObjects(selectedPlatsForWarn.length ? selectedPlatsForWarn : plats), mediaLookup)
-    .forEach(function (it) {
-      (segIssues[it.segNo - 1] = segIssues[it.segNo - 1] || []).push(it);
-    });
+  return html + '</div>';
+}
+
+/** 全量渲染分段卡片（结构变化时调用；输入时只做局部刷新，避免丢焦点） */
+function renderSegments(focusIndex, caret) {
+  var box = $('#seg-editor');
+  if (!box) return;
+  if (!state.segTexts.length) state.segTexts = [''];
+  ensureSegmentArrays();
   var html = '';
-  segments.forEach(function (seg, i) {
-    var over = false;
-    (state.config.platforms || []).forEach(function (p) {
-      var lim = p.limits;
-      var a = EchoChars.analyze(seg.text);
-      var c = lim.weighted ? a.weighted : a.total;
-      if (c > lim.maxChars) over = true;
-    });
-    var hasLink = LINK_RE.test(seg.text);
-    var excluded = seg.exclude || [];
-    // 仅当"已选目标账号"且该段对所有已选平台都被排除时，才置灰提示
-    var selectedPlats = [];
-    targetAccounts().forEach(function (a) {
-      if (selectedPlats.indexOf(a.platform) === -1) selectedPlats.push(a.platform);
-    });
-    var allExcluded = selectedPlats.length > 0 && selectedPlats.every(function (pid) { return excluded.indexOf(pid) !== -1; });
-    var issues = segIssues[i] || [];
-    var cls = 'seg-card' + (over ? ' over' : '') + (hasLink ? ' has-link' : '') +
-      (allExcluded ? ' muted-card' : '') + (issues.length ? ' has-issue' : '');
-    html += '<div class="' + cls + '" data-seg="' + i + '">' +
-      '<div class="seg-head"><span class="seg-no">' + (i + 1) + '</span>' +
-      '<span class="muted small">第 ' + (i + 1) + ' 段</span>' +
-      (hasLink ? '<span class="chip warn" title="X 对含链接的帖子按 $0.20/条计费">含链接</span>' : '') +
-      (issues.length
-        ? '<span class="chip issue" title="' + esc(issues.map(function (x) { return x.message; }).join('\n')) + '">⚠ ' + issues.length + ' 项超限</span>'
-        : '') +
-      '<div class="seg-counts">' + editorPlatformChips(seg.text) + '</div></div>';
-    // 分段级平台开关：取消勾选即不发布到该平台
-    html += '<div class="seg-plats">';
-    plats.forEach(function (pid) {
-      var p = (state.config.platforms || []).find(function (x) { return x.id === pid; });
-      var on = excluded.indexOf(pid) === -1;
-      var hasAccount = !!connectedPlats[pid];
-      html += '<label class="seg-plat' + (on ? '' : ' off') + (hasAccount ? '' : ' no-acct') + '"' +
-        (hasAccount ? '' : ' title="未连接该平台账号，发布时不会发送"') + '>' +
-        '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') +
-        (hasAccount ? '' : ' disabled') + '>' +
-        '<span class="plt ' + esc(pid) + '">' + platformIcon(pid, 12) + '</span></label>';
-    });
-    html += '</div>';
-    // 文本预览（完整显示，不截断；换行与长串由 CSS 处理）
-    html += '<div class="seg-text small muted">' + esc(seg.text).replace(/\n/g, '<br>') + '</div>';
-    // 图片预览（只读；添加/删除在输入框下方的媒体条操作）
-    if ((seg.media || []).length) {
-      // 单张图片级别的超限标记（尺寸/格式），直接标在对应缩略图上
-      var mediaIssues = {};
-      issues.forEach(function (it) {
-        if (it.mediaId) (mediaIssues[it.mediaId] = mediaIssues[it.mediaId] || []).push(it);
-      });
-      html += '<div class="seg-media">';
-      (seg.media || []).forEach(function (mid) {
-        var m = state.mediaMap.get(mid);
-        if (!m) return;
-        var mis = mediaIssues[mid] || [];
-        html += '<div class="media-thumb' + (mis.length ? ' over' : '') + '"' +
-          (mis.length ? ' title="' + esc(mis.map(function (x) { return x.message; }).join('\n')) + '"' : '') + '>' +
-          '<img src="' + esc(m.url) + '" alt="' + esc(m.name) + '">' +
-          (mis.length ? '<span class="thumb-badge">超限</span>' : '') +
-          '</div>';
-      });
-      html += '</div>';
-    }
-    html += '</div>';
+  state.segTexts.forEach(function (text, i) {
+    html += '<div class="' + segCardClass(i) + '" data-seg="' + i + '">' +
+      '<div class="seg-head">' + segHeadHtml(i) + '</div>' +
+      segPlatsHtml(i) +
+      '<textarea class="seg-input" data-seg="' + i + '" rows="2" placeholder="写第 ' + (i + 1) + ' 段…">' +
+      esc(text) + '</textarea>' +
+      '<div class="seg-media-wrap" data-media-for="' + i + '">' + segMediaHtml(i) + '</div>' +
+      '<div class="seg-foot"><button class="btn sm ghost" data-add-media="' + i + '">' +
+      iconSvg(ICON_IMAGE, 13) + ' 添加图片</button>' +
+      '<span class="small muted">Ctrl+V 可直接粘贴截图</span></div>' +
+      '</div>';
   });
+  html += '<button class="btn sm add-seg" id="btn-add-seg">＋ 添加分段</button>';
   box.innerHTML = html;
+  autoGrowAll();
   updateAccountCheckboxStates();
+  updateSegTotal();
+  if (focusIndex != null) focusSegment(focusIndex, caret);
+}
+
+/** 输入时就地刷新卡片头部/样式/图片，不重建 textarea（保持焦点） */
+function refreshSegmentCard(i) {
+  var card = document.querySelector('.seg-card[data-seg="' + i + '"]');
+  if (!card) return;
+  card.className = segCardClass(i);
+  var head = card.querySelector('.seg-head');
+  if (head) head.innerHTML = segHeadHtml(i);
+  var wrap = card.querySelector('.seg-media-wrap');
+  if (wrap) wrap.innerHTML = segMediaHtml(i);
+}
+
+function focusSegment(i, caret) {
+  var ta = document.querySelector('.seg-input[data-seg="' + i + '"]');
+  if (!ta) return;
+  ta.focus();
+  var pos = caret == null ? ta.value.length : caret;
+  ta.setSelectionRange(pos, pos);
+  autoGrow(ta);
+}
+
+function autoGrow(ta) {
+  if (!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.max(72, ta.scrollHeight) + 'px';
+}
+
+function autoGrowAll() {
+  $$('.seg-input').forEach(autoGrow);
+}
+
+function updateSegTotal() {
+  var el2 = $('#seg-total');
+  if (el2) el2.textContent = String(state.segTexts.length);
 }
 
 /* ---------- 编辑器：媒体上传 ---------- */
 async function uploadFiles(files, segIndex) {
+  var target = Math.max(0, Math.min(segIndex || 0, state.segTexts.length - 1));
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
     try {
@@ -486,23 +516,54 @@ async function uploadFiles(files, segIndex) {
         r.readAsDataURL(f);
       });
       var base64 = String(dataUrl).split(',')[1];
-      var r = await api('POST', '/api/media', {
+      var r2 = await api('POST', '/api/media', {
         name: f.name, mime: f.type, size: f.size, dataBase64: base64
       });
-      state.mediaMap.set(r.media.id, r.media);
-      if (!state.segMedia[segIndex]) state.segMedia[segIndex] = [];
-      state.segMedia[segIndex].push(r.media.id);
+      state.mediaMap.set(r2.media.id, r2.media);
+      if (!state.segMedia[target]) state.segMedia[target] = [];
+      state.segMedia[target].push(r2.media.id);
     } catch (err) {
       toast('图片上传失败：' + err.message, 'err');
     }
   }
-  renderSegments();
-  renderMediaStrip();
+  persistLocal();
+  renderSegments(target, null);
+}
+
+/* ---------- 编辑器：本地暂存 ---------- */
+function persistLocal() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      texts: state.segTexts,
+      media: state.segMedia,
+      exclude: state.segExclude
+    }));
+  } catch (e) { /* 忽略配额错误 */ }
+}
+
+function restoreLocal() {
+  var raw = null;
+  try { raw = localStorage.getItem(LS_KEY); } catch (e) { return false; }
+  if (!raw) return false;
+  try {
+    var j = JSON.parse(raw);
+    if (j && Array.isArray(j.texts)) {
+      state.segTexts = j.texts.map(function (t) { return String(t == null ? '' : t); });
+      state.segMedia = (j.media || []).map(function (a) { return Array.isArray(a) ? a.slice() : []; });
+      state.segExclude = (j.exclude || []).map(function (a) {
+        return Array.isArray(a) ? a.slice() : defaultSegmentExclude();
+      });
+      state.segManual = state.segTexts.map(function () { return { x: true }; });
+      return true;
+    }
+  } catch (e) { /* 旧格式：纯文本 */ }
+  var texts = EchoThreadText.splitSegments(raw);
+  state.segTexts = texts.length ? texts : [raw];
+  return true;
 }
 
 /* ---------- 视图：写作台 ---------- */
 function draftBodyFromEditor() {
-  var ta = $('#composer-text');
   var segments = currentSegments();
   var title = (segments[0] && segments[0].text || '').split('\n')[0].slice(0, 40);
   return {
@@ -551,25 +612,22 @@ function renderComposer() {
 
   view.innerHTML =
     '<h2 class="page-title">写作台</h2>' +
-    '<p class="page-sub">写好后选择平台发布、定时或存草稿。用「手动分段」插入 <code>---</code> 分隔线切分长贴文。</p>' +
+    '<p class="page-sub">直接在分段卡片里写，每段独立计数、配图与平台开关。末段按 Enter 新建下一段，段首退格可并入上一段。</p>' +
     '<div class="composer-grid">' +
     '  <div>' +
     '    <div class="card">' +
     '      <div class="editor-toolbar">' +
-    '        <button class="btn sm" id="btn-split">✂️ 手动分段</button>' +
-    '        <button class="btn sm" id="btn-add-image">' + iconSvg(ICON_IMAGE, 14) + ' 添加图片（第 1 段）</button>' +
+    '        <span class="small muted">共 <strong id="seg-total">1</strong> 段</span>' +
     '        <span class="spacer"></span>' +
     '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
     '      </div>' +
-    '      <textarea id="composer-text" placeholder="在这里写贴文……&#10;&#10;「手动分段」插入分隔线；图片可点上方按钮添加，或直接 Ctrl+V 粘贴到光标处。"></textarea>' +
-    '      <div id="media-strip" class="media-strip" hidden></div>' +
-    '      <div class="row" style="margin-top:10px">' +
+    '      <div id="seg-editor" class="seg-list"></div>' +
+    '      <div class="row" style="margin-top:12px">' +
     '        <input type="datetime-local" id="sched-time" value="' + localIso + '">' +
     '        <button class="btn primary" id="btn-schedule">⏰ 定时发布</button>' +
     '        <button class="btn x" id="btn-publish">🚀 立即发布</button>' +
     '      </div>' +
     '    </div>' +
-    '    <div id="seg-list" class="seg-list"></div>' +
     '  </div>' +
     '  <aside>' +
     '    <div class="card"><h3>目标账号</h3><div class="account-pick">' + accountsHtml + '</div>' +
@@ -579,12 +637,15 @@ function renderComposer() {
     '</div>' +
     '<input type="file" id="media-input" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>';
 
-  var ta = $('#composer-text');
-  // 恢复草稿/localStorage
+  // 初始化内容：草稿 > 本地暂存 > 空白
+  state.segTexts = [''];
+  state.segMedia = [];
+  state.segExclude = [];
+  state.segManual = [];
   if (state.draftId) {
     var draft = state.drafts.find(function (x) { return x.id === state.draftId; });
     if (draft) {
-      ta.value = EchoThreadText.joinSegments(draft.segments.map(function (s) { return s.text; }));
+      state.segTexts = draft.segments.map(function (s) { return s.text || ''; });
       state.segMedia = draft.segments.map(function (s) { return (s.media || []).slice(); });
       state.segExclude = draft.segments.map(function (s) {
         return Array.isArray(s.exclude) ? s.exclude.slice() : defaultSegmentExclude();
@@ -595,54 +656,135 @@ function renderComposer() {
       $$('.acct-check').forEach(function (c) { c.checked = state.selectedAccounts.has(c.value); });
     }
   } else {
-    var saved = null;
-    try { saved = localStorage.getItem(LS_KEY); } catch (e) { }
-    if (saved && !ta.value) ta.value = saved;
+    restoreLocal();
   }
+  if (!state.segTexts.length) state.segTexts = [''];
+  ensureSegmentArrays();
 
-  ta.addEventListener('input', function () {
+  renderSegments();
+  bindComposerEvents();
+}
+
+function bindComposerEvents() {
+  var editor = $('#seg-editor');
+  if (!editor) return;
+
+  // 输入：更新模型 + 局部刷新卡片（不重建 textarea，保持焦点）
+  editor.addEventListener('input', function (ev) {
+    var ta = ev.target;
+    if (!ta.classList || !ta.classList.contains('seg-input')) return;
+    var i = parseInt(ta.dataset.seg, 10);
+    var val = ta.value;
+
+    // 兼容手动分段：单独一行 --- 时自动切分
+    if (/(^|\n)\s*---\s*(\n|$)/.test(val)) {
+      var parts = EchoThreadText.splitSegments(val);
+      if (parts.length > 1) {
+        state.segTexts.splice.apply(state.segTexts, [i, 1].concat(parts));
+        for (var k = 1; k < parts.length; k++) {
+          state.segMedia.splice(i + k, 0, []);
+          state.segExclude.splice(i + k, 0, defaultSegmentExclude());
+          state.segManual.splice(i + k, 0, {});
+        }
+        persistLocal();
+        renderSegments(i + parts.length - 1, 0);
+        return;
+      }
+    }
+
+    setSegmentText(i, val);
+    refreshSegmentCard(i);
     autoGrow(ta);
-    syncSegMedia();
-    renderSegments();
-    renderMediaStrip();
-    updateActiveSegLabel();
-    try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
+    persistLocal();
   });
 
-  // 光标位置 → 当前分段（图片默认加到光标所在段）
-  ta.addEventListener('click', updateActiveSegLabel);
-  ta.addEventListener('keyup', updateActiveSegLabel);
+  editor.addEventListener('keydown', function (ev) {
+    var ta = ev.target;
+    if (!ta.classList || !ta.classList.contains('seg-input')) return;
+    var i = parseInt(ta.dataset.seg, 10);
 
-  // 剪贴板粘贴图片（Ctrl+V）
-  ta.addEventListener('paste', function (ev) {
+    // 末段末尾按 Enter → 新建下一段（Shift+Enter 仍为换行）
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing &&
+        ta.selectionStart === ta.value.length && ta.selectionEnd === ta.value.length &&
+        i === state.segTexts.length - 1) {
+      ev.preventDefault();
+      var at = insertSegment(i, '');
+      persistLocal();
+      renderSegments(at, 0);
+      return;
+    }
+
+    // 段首退格 → 并入上一段
+    if (ev.key === 'Backspace' && ta.selectionStart === 0 && ta.selectionEnd === 0 && i > 0) {
+      ev.preventDefault();
+      var prevLen = (state.segTexts[i - 1] || '').length;
+      mergeSegmentIntoPrev(i);
+      persistLocal();
+      renderSegments(i - 1, prevLen);
+    }
+  });
+
+  // 粘贴截图 → 加到当前段
+  editor.addEventListener('paste', function (ev) {
+    var ta = ev.target;
+    if (!ta.classList || !ta.classList.contains('seg-input')) return;
     var items = ev.clipboardData && ev.clipboardData.items;
     if (!items) return;
     var files = [];
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].kind === 'file' && items[i].type && items[i].type.indexOf('image/') === 0) {
-        var f = items[i].getAsFile();
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].kind === 'file' && items[k].type && items[k].type.indexOf('image/') === 0) {
+        var f = items[k].getAsFile();
         if (f) files.push(f);
       }
     }
     if (files.length) {
       ev.preventDefault();
-      uploadFiles(files, currentSegIndex());
+      uploadFiles(files, parseInt(ta.dataset.seg, 10));
     }
   });
 
-  $('#btn-split').addEventListener('click', function () {
-    var pos = ta.selectionStart || ta.value.length;
-    var r = EchoThreadText.insertSeparator(ta.value, pos);
-    ta.value = r.text;
-    ta.focus();
-    ta.setSelectionRange(r.cursorPos, r.cursorPos);
-    autoGrow(ta);
-    syncSegMedia();
-    renderSegments();
-    renderMediaStrip();
-    updateActiveSegLabel();
-    try { localStorage.setItem(LS_KEY, ta.value); } catch (e) { }
+  // 卡片内按钮：加图 / 删段 / 删图 / 加分段
+  editor.addEventListener('click', function (ev) {
+    var addMedia = ev.target.closest('[data-add-media]');
+    if (addMedia) {
+      state.mediaTargetSeg = parseInt(addMedia.dataset.addMedia, 10);
+      var input = $('#media-input');
+      if (input) input.click();
+      return;
+    }
+    var del = ev.target.closest('[data-del-seg]');
+    if (del) {
+      var di = parseInt(del.dataset.delSeg, 10);
+      removeSegmentAt(di);
+      persistLocal();
+      renderSegments(Math.max(0, di - 1), null);
+      return;
+    }
+    var rm = ev.target.closest('[data-rm-media]');
+    if (rm) {
+      var seg = parseInt(rm.dataset.seg, 10);
+      var mid = rm.dataset.rmMedia;
+      state.segMedia[seg] = (state.segMedia[seg] || []).filter(function (x) { return x !== mid; });
+      persistLocal();
+      renderSegments(seg, null);
+      return;
+    }
+    if (ev.target.closest('#btn-add-seg')) {
+      var at2 = insertSegment(state.segTexts.length - 1, '');
+      persistLocal();
+      renderSegments(at2, 0);
+    }
   });
+
+  var mediaInput = $('#media-input');
+  if (mediaInput) {
+    mediaInput.addEventListener('change', function () {
+      if (mediaInput.files && mediaInput.files.length) {
+        uploadFiles(mediaInput.files, state.mediaTargetSeg || 0);
+        mediaInput.value = '';
+      }
+    });
+  }
 
   $('#btn-save').addEventListener('click', saveDraft);
   $('#btn-schedule').addEventListener('click', scheduleDraft);
@@ -664,33 +806,11 @@ function renderComposer() {
       updateAccountCheckboxStates();
     });
   });
-
-  var mediaInput = $('#media-input');
-  mediaInput.addEventListener('change', function () {
-    if (mediaInput.files && mediaInput.files.length) {
-      uploadFiles(mediaInput.files, currentSegIndex());
-      mediaInput.value = '';
-    }
-  });
-
-  $('#btn-add-image').addEventListener('click', function () {
-    $('#media-input').click();
-  });
-
-  renderSegments();
-  renderMediaStrip();
-  updateActiveSegLabel();
-  autoGrow(ta);
-}
-
-function autoGrow(ta) {
-  ta.style.height = 'auto';
-  ta.style.height = Math.max(190, ta.scrollHeight) + 'px';
 }
 
 async function saveDraft() {
-  var ta = $('#composer-text');
-  if (!ta || !ta.value.trim()) { toast('内容为空，无需保存', 'err'); return null; }
+  var hasText = state.segTexts.some(function (t) { return String(t || '').trim(); });
+  if (!hasText) { toast('内容为空，无需保存', 'err'); return null; }
   var body = draftBodyFromEditor();
   if (state.draftId) {
     await api('PUT', '/api/drafts/' + state.draftId, body);
@@ -776,8 +896,7 @@ function targetAccounts() {
 
 /** 发布/定时成功后：清空写作台；若在编辑草稿则消费掉该草稿 */
 async function afterComposeDone() {
-  var ta = $('#composer-text');
-  if (ta) ta.value = '';
+  state.segTexts = [''];
   state.segMedia = [];
   state.segExclude = [];
   state.segManual = [];
@@ -1243,6 +1362,7 @@ function handleGlobalChange(ev) {
       });
     }
   }
+  persistLocal();
   renderSegments();
   updateAccountCheckboxStates();
 }
@@ -1323,16 +1443,6 @@ function handleGlobalClick(ev) {
   var retryEl = t.closest('[data-retry]');
   if (retryEl) {
     postAction('/api/posts/' + retryEl.getAttribute('data-retry') + '/retry', '重试结果');
-    return;
-  }
-
-  var rmMediaEl = t.closest('[data-rm-media]');
-  if (rmMediaEl) {
-    var mid = rmMediaEl.getAttribute('data-rm-media');
-    var seg = parseInt(rmMediaEl.getAttribute('data-seg'), 10) || 0;
-    state.segMedia[seg] = (state.segMedia[seg] || []).filter(function (x) { return x !== mid; });
-    renderSegments();
-    renderMediaStrip();
     return;
   }
 

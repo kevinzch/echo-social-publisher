@@ -1,6 +1,6 @@
 # Echo · 个人贴文发布台（仿 Typefully）
 
-本地优先的单人贴文发布工具：一次编辑，发布到 **X (Twitter)** 和 **Threads**；支持手动分段长贴文、中英文字符分别计数、平台限额实时校验、图片、本地草稿箱与定时发布。零 npm 依赖，Node ≥ 22 即可运行。
+本地优先的单人贴文发布工具：一次编辑，发布到 **X (Twitter)**、**Threads**、**Bluesky**、**Mastodon**；分段卡片内直接编辑长贴文、中英文字符分别计数、平台限额实时校验、图片、本地草稿箱与定时发布。零 npm 依赖，Node ≥ 22 即可运行。
 
 > API / 开发者账号申请步骤见 **[docs/API_APPLY_GUIDE.md](docs/API_APPLY_GUIDE.md)**（X 为按量付费约 $0.015/条、新账号有最多 $70 免费积分；Threads 免费 250 条/天，个人使用成本极低）。
 
@@ -24,7 +24,7 @@ npm test
 | --- | --- |
 | 平台 | X + Threads，均 OAuth 2.0 授权，支持同平台多账号 |
 | 字符统计 | 中文字符 / 英文及其他**分别计数**；X 按加权规则（CJK×2、URL=23）；Threads 500 字平计 |
-| 手动分段 | 工具栏「✂️ 手动分段」插入 `---` 分隔线；每段独立计数与配图 |
+| 分段编辑 | 每段一张卡片、直接在卡片内编辑；末段 Enter 新建、段首退格合并、`+ 添加分段`；每段独立计数与配图 |
 | 图片 | X 每条 ≤4 张（≤5MB/张）；Threads 每条 ≤10 张（≤8MB/张），上限与 Typefully 一致 |
 | 草稿箱 | 本地持久化（`data/drafts.json`），增删改查 |
 | 定时发布 | 进程内调度器 30s 轮询，失败自动重试（5/15/60 分钟退避，共 3 次） |
@@ -36,7 +36,7 @@ npm test
 ## 使用要点
 
 1. **连接账号**：「账号」页 → 连接 X / Threads（首次需在平台侧授权）。
-2. **写作台**：写正文 → 需要长贴文就点「手动分段」→ 给某段点 `+` 传图 → 右侧勾选目标账号 → 保存草稿 / 定时 / 立即发布。
+2. **写作台**：在分段卡片里直接写 → 末段按 Enter 新建下一段 → 卡片内点「添加图片」或 Ctrl+V 粘贴截图 → 右侧勾选目标账号 → 保存草稿 / 定时 / 立即发布。
 3. **Threads 带图/授权**：Threads API 要求**回调和图片都必须是 HTTPS 公网地址**（Meta 强制）。本机直连只能纯文字发 X；Threads 授权与带图发布需先跑隧道（如 `cloudflared tunnel --url http://127.0.0.1:8787`），把地址配到「设置 → Threads 图片公网地址」和 `.env` 的 `THREADS_REDIRECT_URI`，并在 Meta 后台登记 `https://<隧道域名>/auth/threads/callback`。详见 docs/API_APPLY_GUIDE.md §2.4。
 4. **定时可靠性**：调度器在 Echo 进程内运行——**关机/退出期间到期的贴文，会在下次启动时自动补投**。需要 7×24 常驻时建议部署到 NAS / 服务器：仓库已自带 `Dockerfile` + `docker-compose.yml`（含 cloudflared 隧道），步骤见 **[docs/MIGRATE_TO_NAS.md](docs/MIGRATE_TO_NAS.md)**。
 
