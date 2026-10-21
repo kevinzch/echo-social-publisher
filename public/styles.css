@@ -115,7 +115,22 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .composer-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
 .composer-grid > * { min-width: 0; }
 @media (max-width: 900px) { .composer-grid { grid-template-columns: 1fr; } }
-.editor-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+/* 顶部操作栏：滚动时吸顶，保存/定时/立即发布始终可点 */
+.editor-toolbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: -16px -16px 10px; padding: 12px 16px;
+  background: rgba(255, 255, 255, .96);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.editor-toolbar #sched-time { max-width: 200px; }
+@media (max-width: 720px) {
+  .editor-toolbar { gap: 6px; }
+  .editor-toolbar .spacer { display: none; }
+  .editor-toolbar #sched-time { max-width: 100%; }
+}
 #composer-text {
   min-height: 190px; font-size: 15px; line-height: 1.7;
   font-family: inherit;

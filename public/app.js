@@ -619,14 +619,12 @@ function renderComposer() {
     '      <div class="editor-toolbar">' +
     '        <span class="small muted">共 <strong id="seg-total">1</strong> 段</span>' +
     '        <span class="spacer"></span>' +
-    '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
-    '      </div>' +
-    '      <div id="seg-editor" class="seg-list"></div>' +
-    '      <div class="row" style="margin-top:12px">' +
     '        <input type="datetime-local" id="sched-time" value="' + localIso + '">' +
+    '        <button class="btn sm" id="btn-save">💾 保存草稿</button>' +
     '        <button class="btn primary" id="btn-schedule">⏰ 定时发布</button>' +
     '        <button class="btn x" id="btn-publish">🚀 立即发布</button>' +
     '      </div>' +
+    '      <div id="seg-editor" class="seg-list"></div>' +
     '    </div>' +
     '  </div>' +
     '  <aside>' +

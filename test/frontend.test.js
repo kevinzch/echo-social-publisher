@@ -222,6 +222,22 @@ test('超限图片在卡片缩略图上直接标记', () => {
   assert.match(css, /\.media-thumb\.over/);
 });
 
+test('顶部操作栏吸顶，包含保存/定时/立即发布', () => {
+  assert.match(css, /\.editor-toolbar\s*\{[^}]*position:\s*sticky/);
+  assert.match(css, /\.editor-toolbar\s*\{[^}]*top:\s*0/);
+  assert.match(css, /\.editor-toolbar\s*\{[^}]*z-index/);
+  const start = appJs.indexOf('class="editor-toolbar"');
+  const end = appJs.indexOf('id="seg-editor"');
+  const toolbar = appJs.slice(start, end);
+  assert.ok(start > 0 && end > start);
+  assert.match(toolbar, /id="btn-save"/);
+  assert.match(toolbar, /id="btn-schedule"/);
+  assert.match(toolbar, /id="btn-publish"/);
+  assert.match(toolbar, /id="sched-time"/);
+  // 底部不再有重复的操作行
+  assert.ok(appJs.indexOf('margin-top:12px">\' +') === -1 || appJs.indexOf('id="btn-publish"') < appJs.indexOf('id="seg-editor"'));
+});
+
 test('共享库与页面骨架被正确引用', () => {
   assert.match(html, /src="\/shared\/chars\.js\?v=\{\{BUILD\}\}"/);
   assert.match(html, /src="\/shared\/threadText\.js\?v=\{\{BUILD\}\}"/);
