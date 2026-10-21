@@ -395,6 +395,18 @@ function mediaLookup(id) {
   return state.mediaMap.get(id) || null;
 }
 
+/** X 旧令牌缺 media.write 时，带图发布会 403：提前拦截并给出操作指引 */
+function checkXMediaScope(targets, segments) {
+  var hasMedia = (segments || []).some(function (s) { return (s.media || []).length > 0; });
+  if (!hasMedia) return null;
+  var bad = (targets || []).filter(function (a) {
+    return a.platform === 'x' && a.scope && a.scope.indexOf('media.write') === -1;
+  })[0];
+  if (!bad) return null;
+  return 'X（@' + bad.username + '）当前授权缺少图片权限（media.write），带图发布会被拒绝。' +
+    '请到「账号」页解绑后重新授权 X，或取消 X 的分段勾选后再发布。';
+}
+
 /** 发布前本地预检：字数 / 图片数量 / 单图大小 / 格式（逐段 × 逐目标平台） */
 function preflightForTargets(segments, targets) {
   var plats = [];
@@ -1092,6 +1104,8 @@ async function publishDraft() {
     toast('发布前校验未通过：' + EchoPreflight.summary(issues, 2), 'err');
     return;
   }
+  var scopeWarn = checkXMediaScope(targets, allSegs);
+  if (scopeWarn) { toast(scopeWarn, 'err'); return; }
 
   setComposerBusy(true);
   openPublishModal('发布进程', targets);
@@ -1164,6 +1178,8 @@ async function scheduleDraft() {
     toast('定时前校验未通过：' + EchoPreflight.summary(issues, 2), 'err');
     return;
   }
+  var scopeWarn = checkXMediaScope(targets, allSegs);
+  if (scopeWarn) { toast(scopeWarn, 'err'); return; }
 
   setComposerBusy(true);
   openPublishModal('定时发布', targets);
@@ -1383,6 +1399,10 @@ function renderAccounts() {
             ? '<span class="chip warn" title="' + esc('access token 已到期，下次发布会自动续期，无需操作' +
                 (a.refreshExpiresAt ? '（续期凭证有效至 ' + fmtTime(a.refreshExpiresAt) + '）' : '')) + '">待自动续期</span>'
             : '')) +
+        // X 旧令牌缺少 media.write：能发文字但不能发图，提示重新授权
+        (a.platform === 'x' && a.scope && a.scope.indexOf('media.write') === -1
+          ? '<span class="chip issue" title="当前授权不含 media.write，发布带图贴文会被拒绝（403）。请解绑后重新授权 X">缺图片权限</span>'
+          : '') +
         '<span class="spacer"></span>' +
         '<button class="btn sm danger" data-unbind="' + esc(a.id) + '">解绑</button></div>';
     });

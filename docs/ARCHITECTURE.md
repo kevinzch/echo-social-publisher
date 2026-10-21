@@ -102,7 +102,7 @@ logs.json      Log { id, ts, level, scope, message, data }
 
 ```
 前端 ──POST /api/auth/x/start──▶ 服务端生成 state + code_verifier(S256) ──▶ 返回授权 URL
-用户浏览器跳转 twitter.com/i/oauth2/authorize（scope: tweet.read tweet.write users.read offline.access）
+用户浏览器跳转 twitter.com/i/oauth2/authorize（scope: tweet.read tweet.write users.read media.write offline.access）
 X ──302 /auth/x/callback?code&state──▶ 服务端校验 state ──▶ POST /2/oauth2/token 换取令牌
    ──▶ GET /2/users/me 拉取身份 ──▶ 写入 accounts.json ──▶ 302 回 SPA
 ```

@@ -1,7 +1,8 @@
 /**
  * server/platforms/x.js — X (Twitter) API v2 适配器
  *
- * - 认证：OAuth 2.0 + PKCE（scope: tweet.read tweet.write users.read offline.access）
+ * - 认证：OAuth 2.0 + PKCE（scope: tweet.read tweet.write users.read media.write offline.access）
+ *        注意：media.write 是 v1.1 媒体上传的必需权限，旧令牌缺它会 403
  * - 媒体：优先 upload.twitter.com/1.1/media/upload.json 简单上传；
  *        失败回退 v2 分片上传（initialize / append / finalize）
  * - 发布：POST /2/tweets，thread 通过 reply.in_reply_to_tweet_id 串联
@@ -41,7 +42,7 @@ class XAdapter extends PlatformAdapter {
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('client_id', this.config.x.clientId);
     u.searchParams.set('redirect_uri', redirect);
-    u.searchParams.set('scope', 'tweet.read tweet.write users.read offline.access');
+    u.searchParams.set('scope', 'tweet.read tweet.write users.read media.write offline.access');
     u.searchParams.set('state', state);
     u.searchParams.set('code_challenge', codeChallenge);
     u.searchParams.set('code_challenge_method', 'S256');
@@ -128,6 +129,9 @@ class XAdapter extends PlatformAdapter {
     });
     if ((res.status === 200 || res.status === 202) && res.json && res.json.media_id_string) {
       return String(res.json.media_id_string);
+    }
+    if (res.status === 403) {
+      throw new Error('X 图片上传被拒绝（403）：当前授权缺少 media.write 权限，请在「账号」页重新授权 X 后再发图');
     }
     // 回退 v2 分片上传
     return this._uploadOneV2(accessToken, buf, media);

@@ -305,3 +305,10 @@ test('自动刷新防重入，避免请求堆积占满并发连接', () => {
   assert.match(appJs, /if \(autoRefreshing\) return/);
   assert.match(appJs, /autoRefreshing = false;\s*\n\s*\}\s*\n\}/);
 });
+
+test('X 缺 media.write 时带图发布前拦截', () => {
+  assert.match(appJs, /function checkXMediaScope/);
+  assert.match(appJs, /media\.write/);
+  assert.match(appJs, /var scopeWarn = checkXMediaScope\(targets, allSegs\)/);
+  assert.match(appJs, /缺图片权限/);
+});

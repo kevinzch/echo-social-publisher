@@ -192,6 +192,7 @@ class AccountService {
       enabled: account.enabled !== false,
       manual: !!account.manual,
       tokenExpiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      scope: tokens.scope || null,
       refreshExpiresAt: refreshExpiresAt ? new Date(refreshExpiresAt).toISOString() : null,
       tokenStatus,
       // 兼容旧字段：仅在真正无法续期时才算"已过期"

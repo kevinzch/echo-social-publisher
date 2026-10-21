@@ -203,3 +203,31 @@ test('发帖失败抛出可读错误', async (t) => {
     /X 发帖失败: HTTP 403/
   );
 });
+
+test('授权 scope 必须包含 media.write（否则图片上传 403）', () => {
+  const adapter = makeAdapter('http://127.0.0.1:1');
+  const url = adapter.buildAuthorizeUrl({ state: 's', redirectUri: 'http://127.0.0.1:8787/auth/x/callback' });
+  assert.match(url, /media\.write/);
+  assert.match(url, /tweet\.write/);
+});
+
+test('图片上传 403 时给出可操作提示', async (t) => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const server = await startMock((req) => {
+    if (req.path === '/1.1/media/upload.json') return { status: 403, body: { title: 'Forbidden', status: 403 } };
+    return null;
+  });
+  t.after(() => server.close());
+  const p = path.join(os.tmpdir(), 'x403-' + Date.now() + '.png');
+  fs.writeFileSync(p, Buffer.from('fake'));
+  t.after(() => { try { fs.unlinkSync(p); } catch { } });
+  await assert.rejects(
+    () => makeAdapter(baseUrlOf(server)).publishPost(
+      { username: 'u', tokens: { accessToken: 'tok' } },
+      { text: 'x', media: [{ id: 'm1', ext: '.png', mime: 'image/png', size: 4, path: p }] }
+    ),
+    /media\.write/
+  );
+});
