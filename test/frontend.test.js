@@ -312,3 +312,15 @@ test('X 缺 media.write 时带图发布前拦截', () => {
   assert.match(appJs, /var scopeWarn = checkXMediaScope\(targets, allSegs\)/);
   assert.match(appJs, /缺图片权限/);
 });
+
+test('发布后状态写入本地暂存，刷新不丢勾选', () => {
+  // 暂存包含已选账号
+  assert.match(appJs, /accounts: Array\.from\(state\.selectedAccounts\)/);
+  // 恢复时回填账号选择
+  assert.match(appJs, /state\.selectedAccounts = new Set\(j\.accounts\.filter/);
+  // 部分成功 / 部分入队后必须落盘（否则刷新恢复成发布前的全选）
+  const partial = appJs.slice(appJs.indexOf('部分成功：保留写作台内容'), appJs.indexOf('部分成功：\' + okAccounts.length'));
+  assert.match(partial, /persistLocal\(\)/);
+  const partial2 = appJs.slice(appJs.indexOf('部分入队：保留内容'), appJs.indexOf('已加入队列 \' + created.length'));
+  assert.match(partial2, /persistLocal\(\)/);
+});

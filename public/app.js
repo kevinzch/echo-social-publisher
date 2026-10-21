@@ -638,7 +638,8 @@ function persistLocal() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       texts: state.segTexts,
       media: state.segMedia,
-      exclude: state.segExclude
+      exclude: state.segExclude,
+      accounts: Array.from(state.selectedAccounts)
     }));
   } catch (e) { /* 忽略配额错误 */ }
 }
@@ -656,6 +657,11 @@ function restoreLocal() {
         return Array.isArray(a) ? a.slice() : defaultSegmentExclude();
       });
       state.segManual = state.segTexts.map(function () { return { x: true }; });
+      if (Array.isArray(j.accounts)) {
+        var alive = {};
+        state.accounts.forEach(function (a) { alive[a.id] = true; });
+        state.selectedAccounts = new Set(j.accounts.filter(function (id) { return alive[id]; }));
+      }
       return true;
     }
   } catch (e) { /* 旧格式：纯文本 */ }
@@ -765,6 +771,8 @@ function renderComposer() {
   }
   if (!state.segTexts.length) state.segTexts = [''];
   ensureSegmentArrays();
+  // 账号选择可能刚从本地暂存恢复，需回填复选框
+  $$('.acct-check').forEach(function (c) { c.checked = state.selectedAccounts.has(c.value); });
 
   renderSegments();
   bindComposerEvents();
@@ -1149,6 +1157,7 @@ async function publishDraft() {
     if (failPlats.indexOf(plat) === -1) applyPlatformToAll(plat, false);
   });
   okAccounts.forEach(function (a) { state.selectedAccounts.delete(a.id); });
+  persistLocal();
   renderSegments();
   updateAccountCheckboxStates();
   toast('部分成功：' + okAccounts.length + '/' + targets.length +
@@ -1233,6 +1242,7 @@ async function scheduleDraft() {
     if (failPlats.indexOf(plat) === -1) applyPlatformToAll(plat, false);
   });
   okAccs.forEach(function (a) { state.selectedAccounts.delete(a.id); });
+  persistLocal();
   renderSegments();
   updateAccountCheckboxStates();
   toast('已加入队列 ' + created.length + ' 个账号 · 预计 ' + whenLabel +
@@ -1566,6 +1576,8 @@ function handleGlobalClick(ev) {
     if (!confirm('解绑后需要重新授权才能发布，确定解绑？')) return;
     api('DELETE', '/api/accounts/' + uid).then(async function () {
       toast('已解绑', 'ok');
+      state.selectedAccounts.delete(uid);
+      persistLocal();
       await refreshAccounts();
       renderAccounts();
     }).catch(function (e) { toast(e.message, 'err'); });
