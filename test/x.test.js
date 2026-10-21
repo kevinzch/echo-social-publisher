@@ -122,13 +122,15 @@ test('publishPost 发单条（无媒体）', async (t) => {
   assert.deepEqual(tweetBodies[0], { text: '你好 世界' });
 });
 
-test('publishPost 上传图片并挂 media_ids', async (t) => {
+test('publishPost 通过 v2 /2/media/upload 上传图片并挂 media_ids', async (t) => {
   let uploaded = null;
+  let category = null;
   const tweetBodies = [];
   const server = await startMock((req) => {
-    if (req.path === '/1.1/media/upload.json' && req.method === 'POST') {
-      uploaded = req.form.media_data;
-      return { body: { media_id_string: '111', media_id: 111 } };
+    if (req.path === '/2/media/upload' && req.method === 'POST') {
+      uploaded = req.json.media;
+      category = req.json.media_category;
+      return { body: { data: { id: '111', media_key: '3_111' } } };
     }
     if (req.path === '/2/tweets' && req.method === 'POST') {
       tweetBodies.push(req.json);
@@ -143,15 +145,15 @@ test('publishPost 上传图片并挂 media_ids', async (t) => {
     { text: '带图', media: [{ id: 'm1', path: p, mime: 'image/png', name: 'pixel.png', size: 70, url: 'http://x/media/m1.png' }] }
   );
   assert.equal(uploaded, PNG_1PX_BASE64);
+  assert.equal(category, 'tweet_image');
   assert.deepEqual(tweetBodies[0].media, { media_ids: ['111'] });
   assert.equal(r.platformPostId, '1002');
 });
 
-test('v1.1 上传失败时回退 v2 分片上传', async (t) => {
+test('单次上传失败时回退 v2 分片上传', async (t) => {
   const steps = [];
-  let mediaId = null;
   const server = await startMock(async (req) => {
-    if (req.path === '/1.1/media/upload.json') { steps.push('v1.1-fail'); return { status: 500, body: { error: 'boom' } }; }
+    if (req.path === '/2/media/upload' && req.method === 'POST') { steps.push('single-fail'); return { status: 400, body: { errors: [{ detail: 'too large' }] } }; }
     if (req.path === '/2/media/upload/initialize') { steps.push('init'); return { body: { data: { id: 'mid-1' } } }; }
     if (req.path === '/2/media/upload/mid-1/append') { steps.push('append'); return { body: { data: {} } }; }
     if (req.path === '/2/media/upload/mid-1/finalize') { steps.push('finalize'); return { body: { data: { id: 'mid-1' } } }; }
@@ -164,7 +166,7 @@ test('v1.1 上传失败时回退 v2 分片上传', async (t) => {
     { username: 'tester', tokens: { accessToken: 'at' } },
     { text: '带图', media: [{ id: 'm1', path: p, mime: 'image/png', name: 'pixel.png', size: 70, url: '' }] }
   );
-  assert.deepEqual(steps, ['v1.1-fail', 'init', 'append', 'finalize']);
+  assert.deepEqual(steps, ['single-fail', 'init', 'append', 'finalize']);
   assert.equal(r.platformPostId, '1003');
 });
 
@@ -216,7 +218,7 @@ test('图片上传 403 时给出可操作提示', async (t) => {
   const os = require('node:os');
   const path = require('node:path');
   const server = await startMock((req) => {
-    if (req.path === '/1.1/media/upload.json') return { status: 403, body: { title: 'Forbidden', status: 403 } };
+    if (req.path === '/2/media/upload') return { status: 403, body: { errors: [{ detail: 'Forbidden', title: 'Forbidden', status: 403 }] } };
     return null;
   });
   t.after(() => server.close());
@@ -228,6 +230,6 @@ test('图片上传 403 时给出可操作提示', async (t) => {
       { username: 'u', tokens: { accessToken: 'tok' } },
       { text: 'x', media: [{ id: 'm1', ext: '.png', mime: 'image/png', size: 4, path: p }] }
     ),
-    /media\.write/
+    /403/
   );
 });

@@ -3,8 +3,8 @@
  *
  * - 认证：OAuth 2.0 + PKCE（scope: tweet.read tweet.write users.read media.write offline.access）
  *        注意：media.write 是 v1.1 媒体上传的必需权限，旧令牌缺它会 403
- * - 媒体：优先 upload.twitter.com/1.1/media/upload.json 简单上传；
- *        失败回退 v2 分片上传（initialize / append / finalize）
+ * - 媒体：v2 POST /2/media/upload（OAuth2 无法用 v1.1，会 403）；
+ *        单次失败回退 v2 分片上传（initialize / append / finalize）
  * - 发布：POST /2/tweets，thread 通过 reply.in_reply_to_tweet_id 串联
  */
 'use strict';
@@ -116,42 +116,52 @@ class XAdapter extends PlatformAdapter {
     return { externalId: String(d.id), username: d.username, displayName: d.name || d.username };
   }
 
-  /** 上传一张图片 → media id */
+  /**
+   * 上传一张图片 → media id
+   *
+   * 关键：OAuth 2.0 令牌**不能**用于 v1.1 的 /1.1/media/upload.json（必然 403），
+   * 必须走 v2 的 POST /2/media/upload（JSON body，media 传 base64）。
+   * 见 https://docs.x.com/x-api/media/upload-media
+   */
   async _uploadOne(accessToken, media) {
     const buf = fs.readFileSync(media.path);
-    const form = new URLSearchParams();
-    form.set('media_data', buf.toString('base64'));
-    const res = await httpRequest(this.config.x.uploadBaseUrl + '/1.1/media/upload.json', {
+    const category = media.mime === 'image/gif' ? 'tweet_gif' : 'tweet_image';
+    const res = await httpRequest(this.config.x.apiBaseUrl + '/2/media/upload', {
       method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/x-www-form-urlencoded' },
-      form,
-      timeoutMs: 60_000
+      headers: authHeader(accessToken),
+      json: { media: buf.toString('base64'), media_category: category },
+      timeoutMs: 120000
     });
-    if ((res.status === 200 || res.status === 202) && res.json && res.json.media_id_string) {
-      return String(res.json.media_id_string);
+    if (res.status === 200 && res.json && res.json.data && res.json.data.id) {
+      return String(res.json.data.id);
     }
+    // 大文件/单次失败 → v2 分片上传（initialize / append / finalize）
+    if (res.status === 413 || res.status === 400) {
+      return this._uploadOneV2(accessToken, buf, media);
+    }
+    const detail = (res.json && res.json.errors && res.json.errors[0] &&
+      (res.json.errors[0].detail || res.json.errors[0].title)) || String(res.text || '').slice(0, 200);
     if (res.status === 403) {
-      throw new Error('X 图片上传被拒绝（403）：当前授权缺少 media.write 权限，请在「账号」页重新授权 X 后再发图');
+      throw new Error('X 拒绝上传（403）：' + detail +
+        '。请确认 X 应用已开通 media 权限，并在「账号」页重新授权（需 media.write）');
     }
-    // 回退 v2 分片上传
-    return this._uploadOneV2(accessToken, buf, media);
+    throw new Error(`X 图片上传失败: HTTP ${res.status} ${detail}`);
   }
 
   async _uploadOneV2(accessToken, buf, media) {
     const base = this.config.x.apiBaseUrl;
-    const init = new URLSearchParams({
-      media_type: media.mime,
-      total_bytes: String(buf.length),
-      media_category: 'tweet_image'
-    });
     const initRes = await httpRequest(base + '/2/media/upload/initialize', {
       method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/x-www-form-urlencoded' },
-      form: init,
+      headers: authHeader(accessToken),
+      json: {
+        media_type: media.mime,
+        total_bytes: buf.length,
+        media_category: media.mime === 'image/gif' ? 'tweet_gif' : 'tweet_image'
+      },
       timeoutMs: 30_000
     });
     if (initRes.status !== 200 && initRes.status !== 201) {
-      throw new Error(`X 图片上传失败(v1.1/v2): HTTP ${initRes.status} ${(initRes.text || '').slice(0, 200)}`);
+      throw new Error(`X 图片上传 initialize 失败: HTTP ${initRes.status} ${(initRes.text || '').slice(0, 200)}`);
     }
     const mediaId = String(initRes.json.data.id);
 

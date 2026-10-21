@@ -1576,8 +1576,7 @@ function handleGlobalClick(ev) {
     if (!confirm('解绑后需要重新授权才能发布，确定解绑？')) return;
     api('DELETE', '/api/accounts/' + uid).then(async function () {
       toast('已解绑', 'ok');
-      state.selectedAccounts.delete(uid);
-      persistLocal();
+      // 不清除本地选中：重新授权同一账号（id 相同）后应恢复原选择
       await refreshAccounts();
       renderAccounts();
     }).catch(function (e) { toast(e.message, 'err'); });
