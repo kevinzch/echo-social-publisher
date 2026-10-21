@@ -14,8 +14,17 @@ test('中英文字符分别计数', () => {
 });
 
 test('空文本返回全 0', () => {
-  assert.deepEqual(EchoChars.analyze(''), { total: 0, chinese: 0, other: 0, weighted: 0, urls: 0 });
-  assert.deepEqual(EchoChars.analyze(null), { total: 0, chinese: 0, other: 0, weighted: 0, urls: 0 });
+  const zero = { total: 0, chinese: 0, other: 0, weighted: 0, urls: 0, urlChars: 0, literal: 0 };
+  assert.deepEqual(EchoChars.analyze(''), zero);
+  assert.deepEqual(EchoChars.analyze(null), zero);
+});
+
+test('countFor：URL 按平台规则计数', () => {
+  const url = 'https://www.reddit.com/r/witcher/comments/e7skgr/does_anyone_else_get_annoyed/';
+  assert.equal(EchoChars.countFor(url, { weighted: true }), 23, 'X 链接按 23 计');
+  assert.equal(EchoChars.countFor(url, { urlWeight: 23 }), 23, 'Mastodon 链接按 23 计');
+  assert.equal(EchoChars.countFor(url, {}), url.length, 'Threads/Bluesky 按字面计');
+  assert.equal(EchoChars.countFor('你好 abc', { weighted: true }), 8, '中文各 2、空格与英文各 1');
 });
 
 test('X 加权：中文按 2 计', () => {

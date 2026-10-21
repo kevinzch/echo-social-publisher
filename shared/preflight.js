@@ -26,8 +26,8 @@
     return (n / 1024 / 1024).toFixed(1) + ' MB';
   }
 
-  function charCount(text, weighted) {
-    if (weighted && Chars && Chars.analyze) return Chars.analyze(text).weighted;
+  function charCount(text, limits) {
+    if (Chars && Chars.countFor) return Chars.countFor(String(text || ''), limits || {});
     return Array.from(String(text || '')).length;
   }
 
@@ -48,7 +48,7 @@
         if (excluded.indexOf(p.id) !== -1) continue; // 该段不发给此平台，不校验
 
         const lim = p.limits;
-        const count = charCount(text, lim.weighted);
+        const count = charCount(text, lim);
         if (lim.maxChars && count > lim.maxChars) {
           issues.push({
             segNo: idx + 1, platform: p.id, platformName: p.name, kind: 'chars',

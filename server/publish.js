@@ -33,16 +33,9 @@ class Publisher {
       const text = seg.text || '';
       if (!text.trim() && !(seg.media || []).length) continue;
 
-      if (limits.weighted) {
-        const w = EchoChars.analyze(text).weighted;
-        if (w > limits.maxChars) {
-          throw new Error(`第 ${i + 1} 段超过 ${platform.constructor.name} 字数上限（${w}/${limits.maxChars} 加权）`);
-        }
-      } else {
-        const count = ArrayFrom(text).length;
-        if (count > limits.maxChars) {
-          throw new Error(`第 ${i + 1} 段超过 ${platform.constructor.name} 字数上限（${count}/${limits.maxChars}）`);
-        }
+      const count = EchoChars.countFor(text, limits);
+      if (count > limits.maxChars) {
+        throw new Error(`第 ${i + 1} 段超过 ${platform.constructor.name} 字数上限（${count}/${limits.maxChars}${limits.weighted ? ' 加权' : ''}）`);
       }
 
       const media = [];

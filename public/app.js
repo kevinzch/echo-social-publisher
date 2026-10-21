@@ -358,13 +358,13 @@ function updateAccountCheckboxStates() {
 
 function editorPlatformChips(text) {
   var a = EchoChars.analyze(text);
+  // 中/英按字面统计（URL 计入"英"，避免纯链接段显示 0）
   var html = '<span class="chip">中 ' + a.chinese + '</span>' +
-             '<span class="chip">英 ' + a.other + '</span>';
+             '<span class="chip">英 ' + (a.literal - a.chinese) + '</span>';
   (state.config.platforms || []).forEach(function (p) {
     var lim = p.limits;
-    var count, over;
-    if (lim.weighted) { count = a.weighted; over = count > lim.maxChars; }
-    else { count = a.total; over = count > lim.maxChars; }
+    var count = EchoChars.countFor(text, lim);
+    var over = count > lim.maxChars;
     html += '<span class="chip ' + p.id + ' ' + (over ? 'over' : 'ok') + '">' +
             platformIcon(p.id, 12) + ' ' + count + '/' + lim.maxChars + '</span>';
   });
@@ -450,10 +450,8 @@ function segmentIssues(i) {
 function segCardClass(i) {
   var text = state.segTexts[i] || '';
   var over = false;
-  var a = EchoChars.analyze(text);
   (state.config.platforms || []).forEach(function (p) {
-    var c = p.limits.weighted ? a.weighted : a.total;
-    if (c > p.limits.maxChars) over = true;
+    if (EchoChars.countFor(text, p.limits) > p.limits.maxChars) over = true;
   });
   var excluded = state.segExclude[i] || [];
   var selectedPlats = [];

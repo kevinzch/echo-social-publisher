@@ -38,6 +38,7 @@ class MastodonAdapter extends PlatformAdapter {
     return {
       maxChars: 500,
       weighted: false,
+      urlWeight: 23,
       maxImages: 4,
       maxImageBytes: 16 * 1024 * 1024,
       imageMimes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],

@@ -67,12 +67,13 @@
    *   total/other 以 Unicode 标量（code point）计；emoji 组合不当拆分（单独计数）
    */
   function analyze(text) {
-    var res = { total: 0, chinese: 0, other: 0, weighted: 0, urls: 0 };
+    var res = { total: 0, chinese: 0, other: 0, weighted: 0, urls: 0, urlChars: 0, literal: 0 };
     if (!text) return res;
     var str = String(text);
     // 先把 URL 抠出来按 23 计，剩余字符按规则加权
     var urls = str.match(URL_RE) || [];
     res.urls = urls.length;
+    res.urlChars = urls.reduce(function (n, u) { return n + Array.from(u).length; }, 0);
     var withoutUrls = str.replace(URL_RE, '');
     var weighted = urls.length * X_URL_WEIGHT;
 
@@ -94,7 +95,23 @@
       }
     }
     res.weighted = weighted;
+    // literal：URL 按原样计入的总字符数（Threads/Bluesky 等按字面计数的平台用）
+    res.literal = res.total + res.urlChars;
     return res;
+  }
+
+  /**
+   * 按平台限额计算字数
+   * - weighted（X）：URL 按 23 计、CJK 按 2 计
+   * - urlWeight（Mastodon）：URL 按 23 计，其余按 1
+   * - 其余（Threads / Bluesky）：URL 按字面长度计
+   */
+  function countFor(text, limits) {
+    var a = analyze(text);
+    if (!limits) return a.literal;
+    if (limits.weighted) return a.weighted;
+    if (limits.urlWeight) return a.total + a.urls * limits.urlWeight;
+    return a.literal;
   }
 
   /** X 加权后剩余字数 */
@@ -105,6 +122,7 @@
 
   return {
     analyze: analyze,
+    countFor: countFor,
     remainingX: remainingX,
     isChineseChar: isChineseChar,
     X_URL_WEIGHT: X_URL_WEIGHT,
