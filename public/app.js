@@ -371,7 +371,12 @@ function editorPlatformChips(text) {
   return html;
 }
 
-var LINK_RE = /(https?:\/\/|www\.)\S+/i;
+// 显式协议 / www / 常见裸域名（不含 .js 等易误判后缀）
+var LINK_RE = new RegExp(
+  '(https?://|www\\.)\\S+' +
+  '|\\b[\\w-]+(?:\\.[\\w-]+)*\\.(?:com|net|org|io|ai|dev|app|co|me|xyz|party|info|biz|link|blog|site|online|cn|jp|uk|de|fr|nl|ru|kr|tw|hk|sg|my|id|ph|vn|th|tv|cc|gg|so|sh|to|fm|ly|be)\\b',
+  'i'
+);
 
 /** 所有已配置平台（写作台始终展示全部平台，未连接的给出入口） */
 function platformIds() {
@@ -519,11 +524,12 @@ function segMediaHtml(i) {
   }).join('') + '</div>';
 }
 
-function segPlatsHtml(i) {
+/** 平台开关的标签部分（不含外层容器），便于局部刷新复用 */
+function segPlatsInner(i) {
   var connectedPlats = {};
   state.accounts.forEach(function (a) { connectedPlats[a.platform] = true; });
   var excluded = state.segExclude[i] || [];
-  var html = '<div class="seg-plats">';
+  var html = '';
   visiblePlatforms().forEach(function (pid) {
     var on = excluded.indexOf(pid) === -1;
     var hasAccount = !!connectedPlats[pid];
@@ -533,7 +539,11 @@ function segPlatsHtml(i) {
       (hasAccount ? '' : ' disabled') + '>' +
       '<span class="plt ' + esc(pid) + '">' + platformIcon(pid, 12) + '</span></label>';
   });
-  return html + '</div>';
+  return html;
+}
+
+function segPlatsHtml(i) {
+  return '<div class="seg-plats">' + segPlatsInner(i) + '</div>';
 }
 
 /** 全量渲染分段卡片（结构变化时调用；输入时只做局部刷新，避免丢焦点） */
@@ -577,6 +587,9 @@ function refreshSegmentCard(i) {
   card.className = segCardClass(i);
   var head = card.querySelector('.seg-head');
   if (head) head.innerHTML = segHeadHtml(i);
+  // 平台开关必须一起刷新：输入链接会改变 segExclude，只更新头部会让勾选框显示滞后
+  var plats = card.querySelector('.seg-plats');
+  if (plats) plats.innerHTML = segPlatsInner(i);
   var wrap = card.querySelector('.seg-media-wrap');
   if (wrap) wrap.innerHTML = segMediaHtml(i);
 }
@@ -639,6 +652,7 @@ function persistLocal() {
       texts: state.segTexts,
       media: state.segMedia,
       exclude: state.segExclude,
+      manual: state.segManual,
       accounts: Array.from(state.selectedAccounts)
     }));
   } catch (e) { /* 忽略配额错误 */ }
@@ -656,7 +670,11 @@ function restoreLocal() {
       state.segExclude = (j.exclude || []).map(function (a) {
         return Array.isArray(a) ? a.slice() : defaultSegmentExclude();
       });
-      state.segManual = state.segTexts.map(function () { return { x: true }; });
+      // 只有确实手动改过的段才恢复为手动；缺省视为未手动（链接默认仍生效）
+      state.segManual = state.segTexts.map(function (_, idx) {
+        var m = Array.isArray(j.manual) ? j.manual[idx] : null;
+        return m && typeof m === 'object' ? Object.assign({}, m) : {};
+      });
       if (Array.isArray(j.accounts)) {
         var alive = {};
         state.accounts.forEach(function (a) { alive[a.id] = true; });

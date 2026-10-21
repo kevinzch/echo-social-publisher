@@ -324,3 +324,27 @@ test('发布后状态写入本地暂存，刷新不丢勾选', () => {
   const partial2 = appJs.slice(appJs.indexOf('部分入队：保留内容'), appJs.indexOf('已加入队列 \' + created.length'));
   assert.match(partial2, /persistLocal\(\)/);
 });
+
+test('输入链接自动取消 X（手动标记不再被全局置为 true）', () => {
+  // 恢复时不得把所有分段标成"手动"
+  assert.ok(
+    appJs.indexOf("state.segManual = state.segTexts.map(function () { return { x: true }; })") === -1,
+    'restoreLocal 不应把所有段标记为手动'
+  );
+  assert.match(appJs, /manual: state.segManual/);
+  // 局部刷新必须同步平台开关，否则勾选框显示滞后
+  assert.match(appJs, /function segPlatsInner/);
+  assert.match(appJs, /plats\.innerHTML = segPlatsInner\(i\)/);
+});
+
+test('链接识别覆盖裸域名且不误判常见文本', () => {
+  const m = appJs.match(/var LINK_RE = (new RegExp\([\s\S]*?\n\));/);
+  assert.ok(m, '未找到 LINK_RE');
+  const re = eval(m[1]);
+  assert.equal(re.test('看看 https://example.com'), true);
+  assert.equal(re.test('www.test.org 这个'), true);
+  assert.equal(re.test('echo.digitalgarden.party'), true);
+  assert.equal(re.test('Node.js 很好用'), false, '不应把 Node.js 当链接');
+  assert.equal(re.test('版本 1.5 发布了'), false);
+  assert.equal(re.test('e.g. 这样'), false);
+});
