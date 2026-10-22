@@ -108,7 +108,7 @@ test('分段未勾选任何平台时阻止发布并提示段号', () => {
   const schedStart = appJs.indexOf('async function scheduleDraft');
   const pubFn = appJs.slice(pubStart, schedStart);
   assert.ok(pubFn.indexOf('segmentsWithoutAnyPlatform(allSegs, targetPlats)') !== -1, 'publishDraft 缺少覆盖校验');
-  assert.ok(pubFn.indexOf('没有勾选任何发布平台') !== -1, 'publishDraft 缺少提示文案');
+  assert.ok(pubFn.indexOf('segmentBlockSummary(allSegs, targetPlats)') !== -1, 'publishDraft 缺少精确提示');
   const schedFn = appJs.slice(schedStart, schedStart + 1600);
   assert.ok(schedFn.indexOf('segmentsWithoutAnyPlatform(allSegs, targetPlats)') !== -1, 'scheduleDraft 缺少覆盖校验');
 });
@@ -383,4 +383,15 @@ test('快捷键提示：按钮内显示 + hover tooltip', () => {
   assert.match(appJs, /data-tip="Alt\+↓ 下移"/);
   assert.match(css, /\.seg-move-btn::after/);
   assert.match(css, /\.kbd\s*\{/);
+});
+
+test('没有账号的平台不再显示为勾选（幽灵勾选）', () => {
+  assert.match(appJs, /function normalizeSegmentExclude/);
+  assert.match(appJs, /var on = hasAccount && excluded\.indexOf\(pid\) === -1/);
+  assert.match(appJs, /if \(normalizeSegmentExclude\(\)\) persistLocal\(\)/);
+  // 拦截原因区分两种
+  assert.match(appJs, /function segmentBlockReason/);
+  assert.match(appJs, /没有勾选任何发布平台/);
+  assert.match(appJs, /但没有对应的目标账号/);
+  assert.match(appJs, /segmentBlockSummary\(allSegs, targetPlats\)/);
 });

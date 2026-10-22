@@ -527,14 +527,29 @@ function segMediaHtml(i) {
 }
 
 /** 平台开关的标签部分（不含外层容器），便于局部刷新复用 */
+/** 没有已连接账号的平台一律计入 exclude，返回是否有改动 */
+function normalizeSegmentExclude() {
+  var connected = {};
+  state.accounts.forEach(function (a) { connected[a.platform] = true; });
+  var changed = false;
+  for (var i = 0; i < state.segExclude.length; i++) {
+    var ex = state.segExclude[i] || (state.segExclude[i] = []);
+    platformIds().forEach(function (pid) {
+      if (!connected[pid] && ex.indexOf(pid) === -1) { ex.push(pid); changed = true; }
+    });
+  }
+  return changed;
+}
+
 function segPlatsInner(i) {
   var connectedPlats = {};
   state.accounts.forEach(function (a) { connectedPlats[a.platform] = true; });
   var excluded = state.segExclude[i] || [];
   var html = '';
   visiblePlatforms().forEach(function (pid) {
-    var on = excluded.indexOf(pid) === -1;
     var hasAccount = !!connectedPlats[pid];
+    // 没有已连接账号的平台一律显示为未勾选（避免"勾着但灰色禁用"的幽灵状态）
+    var on = hasAccount && excluded.indexOf(pid) === -1;
     html += '<label class="seg-plat' + (on ? '' : ' off') + (hasAccount ? '' : ' no-acct') + '"' +
       (hasAccount ? '' : ' title="未连接该平台账号，发布时不会发送"') + '>' +
       '<input type="checkbox" data-seg-plat="' + esc(pid) + '" data-seg="' + i + '"' + (on ? ' checked' : '') +
@@ -554,6 +569,7 @@ function renderSegments(focusIndex, caret) {
   if (!box) return;
   if (!state.segTexts.length) state.segTexts = [''];
   ensureSegmentArrays();
+  if (normalizeSegmentExclude()) persistLocal();
   var html = '';
   state.segTexts.forEach(function (text, i) {
     html += '<div class="' + segCardClass(i) + '" data-seg="' + i + '">' +
@@ -1140,6 +1156,31 @@ async function afterComposeDone() {
 }
 
 /** 找出"所有目标平台都被取消"的分段，返回从 1 开始的段号 */
+function platformLabel(id) {
+  var p = (state.config.platforms || []).find(function (x) { return x.id === id; });
+  return p ? p.name.split(' ')[0] : id;
+}
+
+/** 说明某段为什么发不出去：完全没勾平台 / 勾了但没有对应目标账号 */
+function segmentBlockReason(seg, targetPlats) {
+  var excluded = seg.exclude || [];
+  if (targetPlats.some(function (p) { return excluded.indexOf(p) === -1; })) return '';
+  var checked = platformIds().filter(function (p) { return excluded.indexOf(p) === -1; });
+  if (!checked.length) return '没有勾选任何发布平台';
+  return '勾选了 ' + checked.map(platformLabel).join('/') + '，但没有对应的目标账号';
+}
+
+function segmentBlockSummary(segments, targetPlats) {
+  var parts = [];
+  segments.forEach(function (s, i) {
+    var hasContent = (s.text || '').trim() || (s.media || []).length;
+    if (!hasContent) return;
+    var reason = segmentBlockReason(s, targetPlats);
+    if (reason) parts.push('第 ' + (i + 1) + ' 段' + reason);
+  });
+  return parts;
+}
+
 function segmentsWithoutAnyPlatform(segments, targetPlats) {
   var bad = [];
   segments.forEach(function (s, i) {
@@ -1163,7 +1204,8 @@ async function publishDraft() {
   var targetPlats = Array.from(new Set(targets.map(function (a) { return a.platform; })));
   var bad = segmentsWithoutAnyPlatform(allSegs, targetPlats);
   if (bad.length) {
-    toast('第 ' + bad.join('、') + ' 段没有勾选任何发布平台，无法发布。请至少勾选一个平台，或清空该段内容。', 'err');
+    toast(segmentBlockSummary(allSegs, targetPlats).join('；') +
+      '，无法发布。请至少勾选一个有账号的平台，或清空该段内容。', 'err');
     return;
   }
 
@@ -1242,7 +1284,8 @@ async function scheduleDraft() {
   var targetPlats = Array.from(new Set(targets.map(function (a) { return a.platform; })));
   var bad = segmentsWithoutAnyPlatform(allSegs, targetPlats);
   if (bad.length) {
-    toast('第 ' + bad.join('、') + ' 段没有勾选任何发布平台，无法定时发布。请至少勾选一个平台，或清空该段内容。', 'err');
+    toast(segmentBlockSummary(allSegs, targetPlats).join('；') +
+      '，无法定时发布。请至少勾选一个有账号的平台，或清空该段内容。', 'err');
     return;
   }
 
