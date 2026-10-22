@@ -373,3 +373,14 @@ test('键盘快捷键：Ctrl+Enter 加分段、Alt+↑↓ 移动分段', () => {
   assert.match(appJs, /已经是第一段了/);
   assert.match(appJs, /已经是最后一段了/);
 });
+
+test('快捷键提示：按钮内显示 + hover tooltip', () => {
+  // 添加分段按钮内嵌 kbd
+  assert.match(appJs, /id="btn-add-seg">＋ 添加分段' \+\s*\n\s*'<kbd class="kbd">/);
+  assert.match(appJs, /function modKeyLabel/);
+  // 移动按钮用 data-tip 而非 title
+  assert.match(appJs, /data-tip="Alt\+↑ 上移"/);
+  assert.match(appJs, /data-tip="Alt\+↓ 下移"/);
+  assert.match(css, /\.seg-move-btn::after/);
+  assert.match(css, /\.kbd\s*\{/);
+});

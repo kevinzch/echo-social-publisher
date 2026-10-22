@@ -567,14 +567,15 @@ function renderSegments(focusIndex, caret) {
       '<span class="small muted">Ctrl+V 可直接粘贴截图</span>' +
       '<span class="spacer"></span>' +
       '<span class="seg-move">' +
-      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="-1" title="上移"' +
+      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="-1" data-tip="Alt+↑ 上移" aria-label="上移（Alt+↑）"' +
       (i === 0 ? ' disabled' : '') + '>↑</button>' +
-      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="1" title="下移"' +
+      '<button class="seg-move-btn" data-move-seg="' + i + '" data-dir="1" data-tip="Alt+↓ 下移" aria-label="下移（Alt+↓）"' +
       (i === state.segTexts.length - 1 ? ' disabled' : '') + '>↓</button>' +
       '</span></div>' +
       '</div>';
   });
-  html += '<button class="btn sm add-seg" id="btn-add-seg">＋ 添加分段</button>';
+  html += '<button class="btn sm add-seg" id="btn-add-seg">＋ 添加分段' +
+    '<kbd class="kbd">' + modKeyLabel() + '+↵</kbd></button>';
   box.innerHTML = html;
   autoGrowAll();
   updateAccountCheckboxStates();
@@ -613,6 +614,11 @@ function autoGrow(ta) {
 
 function autoGrowAll() {
   $$('.seg-input').forEach(autoGrow);
+}
+
+/** Ctrl / ⌘ 标签（按平台显示） */
+function modKeyLabel() {
+  return /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Ctrl';
 }
 
 function updateSegTotal() {
@@ -740,7 +746,7 @@ function renderComposer() {
 
   view.innerHTML =
     '<h2 class="page-title">写作台</h2>' +
-    '<p class="page-sub">直接在分段卡片里写，每段独立计数、配图与平台开关。<br><span class="small muted">快捷键：Ctrl/⌘+Enter 加分段 · Alt+↑/↓ 上下移动 · 末段 Enter 新建 · 段首退格合并</span></p>' +
+    '<p class="page-sub">直接在分段卡片里写，每段独立计数、配图与平台开关。末段按 Enter 新建下一段，段首退格可并入上一段。</p>' +
     '<div class="composer-grid">' +
     '  <div>' +
     '    <div class="card">' +
