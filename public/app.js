@@ -331,6 +331,18 @@ function removeSegmentAt(i) {
   state.segManual.splice(i, 1);
 }
 
+/** 把第 from 段移动到 to（四个平行数组一起动） */
+function moveSegmentTo(from, to) {
+  var n = state.segTexts.length;
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return -1;
+  [state.segTexts, state.segMedia, state.segExclude, state.segManual].forEach(function (arr) {
+    var item = arr.splice(from, 1)[0];
+    arr.splice(to, 0, item);
+  });
+  state.confirmDelSeg = null;
+  return to;
+}
+
 /** 把第 i 段并入上一段（段首退格） */
 function mergeSegmentIntoPrev(i) {
   if (i <= 0) return;
@@ -478,7 +490,7 @@ function segCardClass(i) {
 function segHeadHtml(i) {
   var text = state.segTexts[i] || '';
   var issues = segmentIssues(i);
-  return '<span class="seg-no">' + (i + 1) + '</span>' +
+  return '<span class="seg-no" draggable="true" title="拖动调整顺序">' + (i + 1) + '</span>' +
     '<span class="muted small">第 ' + (i + 1) + ' 段</span>' +
     (LINK_RE.test(text) ? '<span class="chip warn" title="X 对含链接的帖子按 $0.20/条计费">含链接</span>' : '') +
     (issues.length
@@ -1083,11 +1095,29 @@ function bindComposerEvents() {
   // 段内图片拖拽排序
   var dragSrc = null;
   function clearDragMarks() {
-    $$('.media-thumb.dragging, .media-thumb.drag-over').forEach(function (el) {
-      el.classList.remove('dragging'); el.classList.remove('drag-over');
-    });
+    $$('.media-thumb.dragging, .media-thumb.drag-over, .seg-card.dragging, .seg-card.drop-before, .seg-card.drop-after')
+      .forEach(function (el) {
+        el.classList.remove('dragging'); el.classList.remove('drag-over');
+        el.classList.remove('drop-before'); el.classList.remove('drop-after');
+      });
   }
+  var segDrag = null;
+
   editor.addEventListener('dragstart', function (ev) {
+    // 分段拖拽：只能从段号手柄发起，避免和文字选择冲突
+    var handle = ev.target.closest('.seg-no');
+    if (handle) {
+      var card = handle.closest('.seg-card');
+      if (!card) return;
+      segDrag = { from: parseInt(card.dataset.seg, 10) };
+      card.classList.add('dragging');
+      try {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', 'seg:' + segDrag.from);
+        ev.dataTransfer.setDragImage(card, 24, 18);
+      } catch (e) { /* 忽略 */ }
+      return;
+    }
     var th = ev.target.closest('.media-thumb');
     if (!th) return;
     dragSrc = { seg: parseInt(th.dataset.seg, 10), idx: parseInt(th.dataset.mediaIdx, 10) };
@@ -1098,6 +1128,20 @@ function bindComposerEvents() {
     } catch (e) { /* 忽略 */ }
   });
   editor.addEventListener('dragover', function (ev) {
+    // 分段拖拽：按指针在卡片上半/下半决定插入到前还是后
+    if (segDrag) {
+      var card = ev.target.closest('.seg-card');
+      if (!card) return;
+      ev.preventDefault();
+      try { ev.dataTransfer.dropEffect = 'move'; } catch (e) { /* 忽略 */ }
+      var r = card.getBoundingClientRect();
+      var before = (ev.clientY - r.top) < r.height / 2;
+      $$('.seg-card.drop-before, .seg-card.drop-after').forEach(function (el) {
+        el.classList.remove('drop-before'); el.classList.remove('drop-after');
+      });
+      card.classList.add(before ? 'drop-before' : 'drop-after');
+      return;
+    }
     var th = ev.target.closest('.media-thumb');
     if (!th || !dragSrc) return;
     ev.preventDefault();
@@ -1106,6 +1150,25 @@ function bindComposerEvents() {
     th.classList.add('drag-over');
   });
   editor.addEventListener('drop', function (ev) {
+    // 分段拖拽落点
+    if (segDrag) {
+      var card = ev.target.closest('.seg-card');
+      if (!card) { segDrag = null; clearDragMarks(); return; }
+      ev.preventDefault();
+      var j = parseInt(card.dataset.seg, 10);
+      var isBefore = card.classList.contains('drop-before');
+      var insertAt = isBefore ? j : j + 1;
+      var to = insertAt > segDrag.from ? insertAt - 1 : insertAt;
+      var movedTo = moveSegmentTo(segDrag.from, to);
+      segDrag = null;
+      clearDragMarks();
+      state.dragEndedAt = Date.now();
+      if (movedTo >= 0) {
+        persistLocal();
+        renderSegments();
+      }
+      return;
+    }
     var th = ev.target.closest('.media-thumb');
     if (!th || !dragSrc) return;
     ev.preventDefault();
@@ -1121,6 +1184,7 @@ function bindComposerEvents() {
   });
   editor.addEventListener('dragend', function () {
     dragSrc = null;
+    segDrag = null;
     clearDragMarks();
     state.dragEndedAt = Date.now();
   });

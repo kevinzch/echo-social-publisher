@@ -419,3 +419,13 @@ test('点图片删除按钮不会触发放大', () => {
   assert.ok(rmIdx < viewIdx, '删除判断必须早于放大判断');
   assert.match(block, /!ev\.target\.closest\('\[data-rm-media\]'\)/);
 });
+
+test('分段支持拖拽排序，图片用抓手光标', () => {
+  assert.match(appJs, /function moveSegmentTo/);
+  assert.match(appJs, /class="seg-no" draggable="true"/);
+  assert.match(appJs, /dataTransfer\.setDragImage\(card/);
+  assert.match(appJs, /var to = insertAt > segDrag\.from \? insertAt - 1 : insertAt/);
+  assert.match(css, /\.seg-card\.drop-before/);
+  assert.ok(css.indexOf('cursor: grab') !== -1, '应有抓手光标');
+  assert.ok(css.indexOf('cursor: zoom-in') === -1, '不应再有放大镜光标');
+});

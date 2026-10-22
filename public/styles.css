@@ -222,11 +222,12 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .del-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--err); }
 .del-confirm .btn { padding: 2px 8px; font-size: 11px; }
 .add-seg { width: 100%; margin-top: 10px; border-style: dashed; justify-content: center; }
-/* 拖拽排序 */
-.media-thumb { cursor: zoom-in; }
+/* 拖拽排序：可点击也可拖动，用抓手光标（放大镜会误导） */
+.media-thumb { cursor: grab; }
+.media-thumb:active { cursor: grabbing; }
 .media-thumb.dragging { opacity: .35; }
 .media-thumb.drag-over { outline: 2px dashed var(--accent); outline-offset: 1px; }
-.media-thumb img { cursor: zoom-in; }
+.media-thumb img { cursor: grab; pointer-events: none; }
 
 /* 图片放大查看 */
 .lightbox {
@@ -273,7 +274,13 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 .seg-no {
   background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
   width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+  cursor: grab; user-select: none;
 }
+.seg-no:active { cursor: grabbing; }
+/* 分段拖拽中的视觉反馈 */
+.seg-card.dragging { opacity: .45; }
+.seg-card.drop-before { box-shadow: 0 -3px 0 var(--accent); }
+.seg-card.drop-after { box-shadow: 0 3px 0 var(--accent); }
 .seg-counts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .chip {
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
