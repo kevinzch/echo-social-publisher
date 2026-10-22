@@ -165,6 +165,11 @@ class ThreadsAdapter extends PlatformAdapter {
       timeoutMs: 60_000
     });
     if (res.status !== 200 || !res.json || !res.json.id) {
+      const body = res.json && res.json.error ? res.json.error : null;
+      const sub = body && body.error_subcode;
+      if (sub === 4279047) {
+        throw new Error('Threads 无法为该链接生成预览（目标站点可能拦截了抓取）。可改用短链，或把链接放到正文中一起发。');
+      }
       throw new Error(`Threads 发布失败: HTTP ${res.status} ${(res.text || '').slice(0, 300)}`);
     }
     return String(res.json.id);

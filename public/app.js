@@ -117,7 +117,11 @@ async function api(method, path, body, opts) {
   }
   var data = {};
   try { data = await res.json(); } catch (e) { /* ignore */ }
-  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  if (!res.ok) {
+    var e = new Error(data.error || ('HTTP ' + res.status));
+    e.data = data;
+    throw e;
+  }
   return data;
 }
 
@@ -764,11 +768,15 @@ function renderComposer() {
     '</div>' +
     '<input type="file" id="media-input" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>';
 
-  // 初始化内容：草稿 > 本地暂存 > 空白
-  state.segTexts = [''];
-  state.segMedia = [];
-  state.segExclude = [];
-  state.segManual = [];
+  // 初始化内容：草稿 > 内存中的编辑状态 > 本地暂存 > 空白
+  // （切到别的页面再回来时不能重新读 localStorage，否则会覆盖刚才的勾选）
+  var hasMemory = (state.segTexts || []).some(function (t) { return String(t || '').trim(); });
+  if (!state.draftId && !hasMemory) {
+    state.segTexts = [''];
+    state.segMedia = [];
+    state.segExclude = [];
+    state.segManual = [];
+  }
   if (state.draftId) {
     var draft = state.drafts.find(function (x) { return x.id === state.draftId; });
     if (draft) {
@@ -782,7 +790,7 @@ function renderComposer() {
       state.selectedAccounts = new Set(draft.accountIds || []);
       $$('.acct-check').forEach(function (c) { c.checked = state.selectedAccounts.has(c.value); });
     }
-  } else {
+  } else if (!hasMemory) {
     restoreLocal();
   }
   if (!state.segTexts.length) state.segTexts = [''];
@@ -978,6 +986,7 @@ function bindComposerEvents() {
         });
         applyPlatformToAll(acc.platform, anyOn);
       }
+      persistLocal();
       renderSegments();
       updateAccountCheckboxStates();
     });
@@ -1052,6 +1061,13 @@ function updatePublishRow(accountId, status, detail, urls) {
     det.className = 'publish-detail';
     det.style.color = 'var(--err)';
     det.textContent = detail || '失败';
+    // 线程部分成功时，把已发出的段链接一并给出
+    if (urls && urls.length) {
+      det.innerHTML = esc(detail || '失败') + '<div class="meta" style="margin-top:4px">已发布 ' + urls.length +
+        ' 段：' + urls.map(function (u) {
+          return '<a href="' + esc(u) + '" target="_blank" rel="noopener">第 ' + (urls.indexOf(u) + 1) + ' 段 ↗</a>';
+        }).join(' ') + '</div>';
+    }
   }
 }
 
@@ -1142,10 +1158,13 @@ async function publishDraft() {
       var r = await api('POST', '/api/compose/publish', { segments: segments, accountIds: [acc.id] }, { timeout: 180000 });
       var res = (r.results && r.results[0]) || {};
       if (res.ok) { okAccounts.push(acc); updatePublishRow(acc.id, 'ok', '', res.urls); }
-      else { failAccounts.push(acc); updatePublishRow(acc.id, 'fail', res.error || '发布失败'); }
+      else {
+        failAccounts.push(acc);
+        updatePublishRow(acc.id, 'fail', res.error || '发布失败', res.urls);
+      }
     } catch (e) {
       failAccounts.push(acc);
-      updatePublishRow(acc.id, 'fail', e.message);
+      updatePublishRow(acc.id, 'fail', e.message, e.data && e.data.urls);
     }
   }
   setComposerBusy(false);

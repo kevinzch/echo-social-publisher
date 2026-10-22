@@ -433,7 +433,12 @@ function makeRoutes(ctx) {
           const r = await publisher.publishPost(store.posts.get(post.id));
           sendJson(res, 200, { ok: true, urls: r.urls });
         } catch (err) {
-          sendError(res, 502, `发布失败: ${err.message}`);
+          const partial = Array.isArray(err.partialResults) ? err.partialResults : [];
+          sendError(res, 502, `发布失败: ${err.message}`, {
+            urls: partial.map((r) => r.permalink).filter(Boolean),
+            publishedCount: partial.length,
+            totalCount: err.totalSegments || 0
+          });
         }
       }
     },

@@ -348,3 +348,18 @@ test('链接识别覆盖裸域名且不误判常见文本', () => {
   assert.equal(re.test('版本 1.5 发布了'), false);
   assert.equal(re.test('e.g. 这样'), false);
 });
+
+test('切页面再回写作台不丢勾选', () => {
+  // 账号勾选变化后必须落盘（此前只有分段开关会落盘）
+  assert.match(appJs, /applyPlatformToAll\(acc\.platform, anyOn\);\s*\n\s*\}\s*\n\s*persistLocal\(\);/);
+  // 同一会话内优先用内存状态，不重新读 localStorage
+  assert.match(appJs, /var hasMemory = \(state\.segTexts \|\| \[\]\)\.some/);
+  assert.match(appJs, /else if \(!hasMemory\) \{\s*\n\s*restoreLocal\(\);/);
+});
+
+test('线程部分失败时展示已发布段的链接', () => {
+  // 错误响应带 urls
+  assert.match(appJs, /e\.data = data/);
+  assert.match(appJs, /updatePublishRow\(acc\.id, 'fail', e\.message, e\.data && e\.data\.urls\)/);
+  assert.match(appJs, /已发布 ' \+ urls\.length/);
+});
