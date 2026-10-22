@@ -2104,12 +2104,12 @@ async function renderSettings() {
 /* ---------- 视图：申请指南 ---------- */
 async function renderGuide() {
   var view = $('#view');
-  view.innerHTML = '<h2 class="page-title">API / 开发者账号申请指南</h2><div class="loading">加载中…</div>';
+  view.innerHTML = '<h2 class="page-title">平台申请与连接指南</h2><div class="loading">加载中…</div>';
   try {
     var r = await api('GET', '/api/apply-guide');
-    view.innerHTML = '<h2 class="page-title">API / 开发者账号申请指南</h2>' + renderMarkdown(r.markdown);
+    view.innerHTML = '<h2 class="page-title">平台申请与连接指南</h2>' + renderMarkdown(r.markdown);
   } catch (e) {
-    view.innerHTML = '<h2 class="page-title">申请指南</h2>' +
+    view.innerHTML = '<h2 class="page-title">平台申请与连接指南</h2>' +
       '<div class="card"><p class="small" style="color:var(--err)">加载失败：' + esc(e.message) + '</p>' +
       '<button class="btn primary sm" id="btn-guide-retry">重试</button></div>';
     var rb = $('#btn-guide-retry');
@@ -2117,11 +2117,32 @@ async function renderGuide() {
   }
 }
 
+function mdCells(row) {
+  return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) { return c.trim(); });
+}
+
+function mdTable(rows, inline) {
+  if (rows.length < 2) return '<p>' + inline(rows.join(' ')) + '</p>';
+  var head = mdCells(rows[0]);
+  var hasSep = /^\s*\|?[\s:|-]*-{3,}[\s:|-]*\|?\s*$/.test(rows[1]);
+  var body = rows.slice(hasSep ? 2 : 1);
+  var html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+  head.forEach(function (c) { html += '<th>' + inline(c) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  body.forEach(function (r) {
+    html += '<tr>';
+    mdCells(r).forEach(function (c) { html += '<td>' + inline(c) + '</td>'; });
+    html += '</tr>';
+  });
+  return html + '</tbody></table></div>';
+}
+
 function renderMarkdown(src) {
   var lines = String(src).split(/\r?\n/);
   var html = '', inCode = false, listType = null, para = [];
   function inline(s) {
     return esc(s)
+      .replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
       .replace(/`([^`]+)`/g, function (m, c) { return '<code>' + c + '</code>'; })
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
@@ -2146,6 +2167,14 @@ function renderMarkdown(src) {
     }
     if (/^-{3,}$/.test(line.trim())) { flushPara(); flushList(); html += '<hr>'; continue; }
     if (/^&gt;\s?/.test(esc(line))) { flushPara(); flushList(); html += '<blockquote>' + inline(line.replace(/^>\s?/, '')) + '</blockquote>'; continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushPara(); flushList();
+      var trows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { trows.push(lines[i]); i++; }
+      i--;
+      html += mdTable(trows, inline);
+      continue;
+    }
     if (/^[-*]\s+/.test(line)) {
       flushPara();
       if (listType !== 'ul') { flushList(); html += '<ul>'; listType = 'ul'; }

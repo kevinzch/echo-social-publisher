@@ -439,3 +439,10 @@ test('失效图片引用会被清理，序号按可见顺序编号', () => {
   // 发布时也不带失效 id
   assert.match(appJs, /media: \(state\.segMedia\[i\] \|\| \[\]\)\.filter/);
 });
+
+test('申请指南的 markdown 表格能正确渲染', () => {
+  assert.match(appJs, /function mdTable/);
+  assert.match(appJs, /function mdCells/);
+  assert.match(appJs, /\^\\s\*\\\|\.\*\\\|\\s\*\$/);
+  assert.match(css, /\.md-table\s*\{/);
+});

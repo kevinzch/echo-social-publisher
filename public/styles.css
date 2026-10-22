@@ -61,6 +61,16 @@ body {
 .build-stamp { margin-top: 4px; font-size: 10px; color: var(--text-3); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; opacity: .75; }
 
 /* 写作台右侧「平台规则」 */
+/* Markdown 表格（申请指南用） */
+.md-table-wrap { overflow-x: auto; margin: 10px 0 14px; }
+.md-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.md-table th, .md-table td {
+  border: 1px solid var(--border); padding: 7px 10px; text-align: left;
+  vertical-align: top; line-height: 1.55;
+}
+.md-table th { background: var(--panel); font-weight: 600; white-space: nowrap; }
+.md-table tbody tr:nth-child(even) { background: #fafafa; }
+
 /* 图片清理确认块 */
 .cleanup-confirm {
   margin-top: 10px; padding: 10px 12px; border-radius: 8px;
