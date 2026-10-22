@@ -1057,11 +1057,7 @@ function bindComposerEvents() {
       }
       return;
     }
-    var viewEl = ev.target.closest('[data-view-media]');
-    if (viewEl && Date.now() - (state.dragEndedAt || 0) > 300) {
-      openLightbox(parseInt(viewEl.dataset.seg, 10), parseInt(viewEl.dataset.mediaIdx, 10));
-      return;
-    }
+    // 删除按钮优先于"点击放大"：× 在缩略图内部，不先判断会误触灯箱
     var rm = ev.target.closest('[data-rm-media]');
     if (rm) {
       var seg = parseInt(rm.dataset.seg, 10);
@@ -1069,6 +1065,12 @@ function bindComposerEvents() {
       state.segMedia[seg] = (state.segMedia[seg] || []).filter(function (x) { return x !== mid; });
       persistLocal();
       renderSegments(seg, null);
+      return;
+    }
+    var viewEl = ev.target.closest('[data-view-media]');
+    if (viewEl && !ev.target.closest('[data-rm-media]') &&
+        Date.now() - (state.dragEndedAt || 0) > 300) {
+      openLightbox(parseInt(viewEl.dataset.seg, 10), parseInt(viewEl.dataset.mediaIdx, 10));
       return;
     }
     if (ev.target.closest('#btn-add-seg')) {

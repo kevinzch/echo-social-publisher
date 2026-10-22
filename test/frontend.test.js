@@ -408,3 +408,14 @@ test('图片可点击放大、可拖拽排序', () => {
   assert.match(css, /\.lightbox\s*\{/);
   assert.match(css, /\.media-thumb\.drag-over/);
 });
+
+test('点图片删除按钮不会触发放大', () => {
+  const start = appJs.indexOf("editor.addEventListener('click'");
+  const end = appJs.indexOf("var mediaInput = $('#media-input')");
+  const block = appJs.slice(start, end);
+  const rmIdx = block.indexOf("closest('[data-rm-media]')");
+  const viewIdx = block.indexOf("closest('[data-view-media]')");
+  assert.ok(rmIdx > -1 && viewIdx > -1, '缺少删除或放大判断');
+  assert.ok(rmIdx < viewIdx, '删除判断必须早于放大判断');
+  assert.match(block, /!ev\.target\.closest\('\[data-rm-media\]'\)/);
+});
