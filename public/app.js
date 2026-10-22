@@ -292,7 +292,7 @@ function currentSegments() {
   return state.segTexts.map(function (t, i) {
     return {
       text: t,
-      media: (state.segMedia[i] || []).slice(),
+      media: (state.segMedia[i] || []).filter(function (id) { return state.mediaMap.has(id); }),
       exclude: (state.segExclude[i] || []).slice()
     };
   });
@@ -595,7 +595,8 @@ function closeLightbox() {
 }
 
 function segMediaHtml(i) {
-  var ids = state.segMedia[i] || [];
+  // 只渲染真实存在的图片，序号按可见顺序从 1 开始
+  var ids = (state.segMedia[i] || []).filter(function (id) { return state.mediaMap.has(id); });
   if (!ids.length) return '';
   var issues = segmentIssues(i);
   var byMedia = {};
@@ -618,6 +619,21 @@ function segMediaHtml(i) {
 }
 
 /** 平台开关的标签部分（不含外层容器），便于局部刷新复用 */
+/** 丢弃已不存在的图片引用（例如被孤儿清理删掉），返回是否有改动 */
+function pruneMissingMedia() {
+  if (!state.loaded) return false;
+  var changed = false;
+  for (var i = 0; i < state.segMedia.length; i++) {
+    var before = state.segMedia[i] || [];
+    var after = before.filter(function (id) { return state.mediaMap.has(id); });
+    if (after.length !== before.length) {
+      state.segMedia[i] = after;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 /** 没有已连接账号的平台一律计入 exclude，返回是否有改动 */
 function normalizeSegmentExclude() {
   var connected = {};
@@ -660,7 +676,8 @@ function renderSegments(focusIndex, caret) {
   if (!box) return;
   if (!state.segTexts.length) state.segTexts = [''];
   ensureSegmentArrays();
-  if (normalizeSegmentExclude()) persistLocal();
+  var pruned = pruneMissingMedia();
+  if (normalizeSegmentExclude() || pruned) persistLocal();
   var html = '';
   state.segTexts.forEach(function (text, i) {
     html += '<div class="' + segCardClass(i) + '" data-seg="' + i + '">' +

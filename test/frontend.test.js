@@ -388,7 +388,7 @@ test('快捷键提示：按钮内显示 + hover tooltip', () => {
 test('没有账号的平台不再显示为勾选（幽灵勾选）', () => {
   assert.match(appJs, /function normalizeSegmentExclude/);
   assert.match(appJs, /var on = hasAccount && excluded\.indexOf\(pid\) === -1/);
-  assert.match(appJs, /if \(normalizeSegmentExclude\(\)\) persistLocal\(\)/);
+  assert.match(appJs, /if \(normalizeSegmentExclude\(\) \|\| pruned\) persistLocal\(\)/);
   // 拦截原因区分两种
   assert.match(appJs, /function segmentBlockReason/);
   assert.match(appJs, /没有勾选任何发布平台/);
@@ -428,4 +428,14 @@ test('分段支持拖拽排序，图片用抓手光标', () => {
   assert.match(css, /\.seg-card\.drop-before/);
   assert.ok(css.indexOf('cursor: grab') !== -1, '应有抓手光标');
   assert.ok(css.indexOf('cursor: zoom-in') === -1, '不应再有放大镜光标');
+});
+
+test('失效图片引用会被清理，序号按可见顺序编号', () => {
+  assert.match(appJs, /function pruneMissingMedia/);
+  assert.match(appJs, /if \(!state\.loaded\) return false/);
+  assert.match(appJs, /var pruned = pruneMissingMedia\(\)/);
+  // 渲染时先过滤再编号
+  assert.match(appJs, /var ids = \(state\.segMedia\[i\] \|\| \[\]\)\.filter\(function \(id\) \{ return state\.mediaMap\.has\(id\); \}\)/);
+  // 发布时也不带失效 id
+  assert.match(appJs, /media: \(state\.segMedia\[i\] \|\| \[\]\)\.filter/);
 });
