@@ -395,3 +395,16 @@ test('没有账号的平台不再显示为勾选（幽灵勾选）', () => {
   assert.match(appJs, /但没有对应的目标账号/);
   assert.match(appJs, /segmentBlockSummary\(allSegs, targetPlats\)/);
 });
+
+test('图片可点击放大、可拖拽排序', () => {
+  assert.match(appJs, /function openLightbox/);
+  assert.match(appJs, /function lightboxStep/);
+  assert.match(appJs, /function moveMediaWithinSegment/);
+  assert.match(appJs, /draggable="true" data-seg=/);
+  assert.match(appJs, /editor\.addEventListener\('dragstart'/);
+  assert.match(appJs, /editor\.addEventListener\('drop'/);
+  // 拖拽后 300ms 内不触发放大
+  assert.match(appJs, /state\.dragEndedAt/);
+  assert.match(css, /\.lightbox\s*\{/);
+  assert.match(css, /\.media-thumb\.drag-over/);
+});

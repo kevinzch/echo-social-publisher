@@ -160,6 +160,13 @@ function connectedOf(platformId) {
 
 /* ---------- 启动 ---------- */
 async function init() {
+  document.addEventListener('keydown', function (ev) {
+    var box = $('#lightbox');
+    if (!box || box.hidden) return;
+    if (ev.key === 'Escape') { closeLightbox(); }
+    else if (ev.key === 'ArrowLeft') { lightboxStep(-1); }
+    else if (ev.key === 'ArrowRight') { lightboxStep(1); }
+  });
   window.addEventListener('unhandledrejection', function (ev) {
     var msg = ev && ev.reason && ev.reason.message ? ev.reason.message : '请求失败';
     toast('操作失败：' + msg, 'err');
@@ -504,6 +511,77 @@ function moveSegment(i, dir) {
   return j;
 }
 
+/** 段内图片排序：把 from 位置的图片移动到 to */
+function moveMediaWithinSegment(seg, from, to) {
+  var arr = state.segMedia[seg] || [];
+  if (from === to || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return false;
+  var moved = arr.splice(from, 1)[0];
+  arr.splice(to, 0, moved);
+  return true;
+}
+
+/* ---------- 图片放大查看 ---------- */
+var lightboxAt = { seg: 0, idx: 0 };
+
+function lightboxList(seg) {
+  return (state.segMedia[seg] || []).map(function (id) { return state.mediaMap.get(id); }).filter(Boolean);
+}
+
+function ensureLightbox() {
+  if ($('#lightbox')) return;
+  document.body.insertAdjacentHTML('beforeend',
+    '<div id="lightbox" class="lightbox" hidden>' +
+    '<button class="lb-close" data-lb-close title="关闭（Esc）">×</button>' +
+    '<button class="lb-nav lb-prev" data-lb-prev title="上一张（←）">‹</button>' +
+    '<img id="lb-img" alt="">' +
+    '<button class="lb-nav lb-next" data-lb-next title="下一张（→）">›</button>' +
+    '<div class="lb-meta"><span id="lb-count"></span><span id="lb-name"></span></div>' +
+    '</div>');
+  var box = $('#lightbox');
+  box.addEventListener('click', function (ev) {
+    if (ev.target === box || ev.target.closest('[data-lb-close]')) { closeLightbox(); return; }
+    if (ev.target.closest('[data-lb-prev]')) { lightboxStep(-1); return; }
+    if (ev.target.closest('[data-lb-next]')) { lightboxStep(1); }
+  });
+}
+
+function openLightbox(seg, idx) {
+  ensureLightbox();
+  var list = lightboxList(seg);
+  if (!list.length) return;
+  lightboxAt = { seg: seg, idx: Math.max(0, Math.min(idx, list.length - 1)) };
+  renderLightbox();
+  $('#lightbox').hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+function renderLightbox() {
+  var list = lightboxList(lightboxAt.seg);
+  if (!list.length) return closeLightbox();
+  if (lightboxAt.idx >= list.length) lightboxAt.idx = list.length - 1;
+  var m = list[lightboxAt.idx];
+  $('#lb-img').src = m.url;
+  $('#lb-img').alt = m.name || '';
+  $('#lb-count').textContent = (lightboxAt.idx + 1) + ' / ' + list.length;
+  $('#lb-name').textContent = (m.name || '') + (m.size ? ' · ' + EchoPreflight.formatBytes(m.size) : '');
+  // 只有一张时隐藏左右箭头
+  var single = list.length < 2;
+  $$('.lb-nav').forEach(function (b) { b.hidden = single; });
+}
+
+function lightboxStep(delta) {
+  var list = lightboxList(lightboxAt.seg);
+  if (list.length < 2) return;
+  lightboxAt.idx = (lightboxAt.idx + delta + list.length) % list.length;
+  renderLightbox();
+}
+
+function closeLightbox() {
+  var box = $('#lightbox');
+  if (box) box.hidden = true;
+  document.body.style.overflow = '';
+}
+
 function segMediaHtml(i) {
   var ids = state.segMedia[i] || [];
   if (!ids.length) return '';
@@ -517,7 +595,8 @@ function segMediaHtml(i) {
     if (!m) return '';
     var mis = byMedia[mid] || [];
     return '<div class="media-thumb' + (mis.length ? ' over' : '') + '"' +
-      (mis.length ? ' title="' + esc(mis.map(function (x) { return x.message; }).join('\n')) + '"' : '') + '>' +
+      ' draggable="true" data-seg="' + i + '" data-media-idx="' + idx + '" data-view-media="' + esc(mid) + '"' +
+      (mis.length ? ' title="' + esc(mis.map(function (x) { return x.message; }).join('\n')) + '"' : ' title="点击放大 · 拖动排序"') + '>' +
       '<img src="' + esc(m.url) + '" alt="' + esc(m.name) + '">' +
       '<span class="media-idx">' + (idx + 1) + '</span>' +
       (mis.length ? '<span class="thumb-badge">超限</span>' : '') +
@@ -978,6 +1057,11 @@ function bindComposerEvents() {
       }
       return;
     }
+    var viewEl = ev.target.closest('[data-view-media]');
+    if (viewEl && Date.now() - (state.dragEndedAt || 0) > 300) {
+      openLightbox(parseInt(viewEl.dataset.seg, 10), parseInt(viewEl.dataset.mediaIdx, 10));
+      return;
+    }
     var rm = ev.target.closest('[data-rm-media]');
     if (rm) {
       var seg = parseInt(rm.dataset.seg, 10);
@@ -992,6 +1076,51 @@ function bindComposerEvents() {
       persistLocal();
       renderSegments(at2, 0);
     }
+  });
+
+  // 段内图片拖拽排序
+  var dragSrc = null;
+  function clearDragMarks() {
+    $$('.media-thumb.dragging, .media-thumb.drag-over').forEach(function (el) {
+      el.classList.remove('dragging'); el.classList.remove('drag-over');
+    });
+  }
+  editor.addEventListener('dragstart', function (ev) {
+    var th = ev.target.closest('.media-thumb');
+    if (!th) return;
+    dragSrc = { seg: parseInt(th.dataset.seg, 10), idx: parseInt(th.dataset.mediaIdx, 10) };
+    th.classList.add('dragging');
+    try {
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(dragSrc.idx));
+    } catch (e) { /* 忽略 */ }
+  });
+  editor.addEventListener('dragover', function (ev) {
+    var th = ev.target.closest('.media-thumb');
+    if (!th || !dragSrc) return;
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'move'; } catch (e) { /* 忽略 */ }
+    $$('.media-thumb.drag-over').forEach(function (el) { el.classList.remove('drag-over'); });
+    th.classList.add('drag-over');
+  });
+  editor.addEventListener('drop', function (ev) {
+    var th = ev.target.closest('.media-thumb');
+    if (!th || !dragSrc) return;
+    ev.preventDefault();
+    var toSeg = parseInt(th.dataset.seg, 10);
+    var toIdx = parseInt(th.dataset.mediaIdx, 10);
+    if (toSeg === dragSrc.seg && moveMediaWithinSegment(toSeg, dragSrc.idx, toIdx)) {
+      persistLocal();
+      renderSegments(toSeg, null);
+    }
+    dragSrc = null;
+    clearDragMarks();
+    state.dragEndedAt = Date.now();
+  });
+  editor.addEventListener('dragend', function () {
+    dragSrc = null;
+    clearDragMarks();
+    state.dragEndedAt = Date.now();
   });
 
   var mediaInput = $('#media-input');
