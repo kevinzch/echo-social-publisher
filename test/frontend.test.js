@@ -363,3 +363,13 @@ test('线程部分失败时展示已发布段的链接', () => {
   assert.match(appJs, /updatePublishRow\(acc\.id, 'fail', e\.message, e\.data && e\.data\.urls\)/);
   assert.match(appJs, /已发布 ' \+ urls\.length/);
 });
+
+test('键盘快捷键：Ctrl+Enter 加分段、Alt+↑↓ 移动分段', () => {
+  assert.match(appJs, /ev\.key === 'Enter' && \(ev\.ctrlKey \|\| ev\.metaKey\)/);
+  assert.match(appJs, /ev\.altKey && \(ev\.key === 'ArrowUp' \|\| ev\.key === 'ArrowDown'\)/);
+  assert.match(appJs, /var to = moveSegment\(i, dir\)/);
+  assert.match(appJs, /renderSegments\(to, caret\)/);
+  // 越界提示
+  assert.match(appJs, /已经是第一段了/);
+  assert.match(appJs, /已经是最后一段了/);
+});

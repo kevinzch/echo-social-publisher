@@ -740,7 +740,7 @@ function renderComposer() {
 
   view.innerHTML =
     '<h2 class="page-title">写作台</h2>' +
-    '<p class="page-sub">直接在分段卡片里写，每段独立计数、配图与平台开关。末段按 Enter 新建下一段，段首退格可并入上一段。</p>' +
+    '<p class="page-sub">直接在分段卡片里写，每段独立计数、配图与平台开关。<br><span class="small muted">快捷键：Ctrl/⌘+Enter 加分段 · Alt+↑/↓ 上下移动 · 末段 Enter 新建 · 段首退格合并</span></p>' +
     '<div class="composer-grid">' +
     '  <div>' +
     '    <div class="card">' +
@@ -840,6 +840,30 @@ function bindComposerEvents() {
     var ta = ev.target;
     if (!ta.classList || !ta.classList.contains('seg-input')) return;
     var i = parseInt(ta.dataset.seg, 10);
+
+    // Ctrl/Cmd + Enter：在当前段之后插入新段
+    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey) && !ev.isComposing) {
+      ev.preventDefault();
+      var atNew = insertSegment(i, '');
+      persistLocal();
+      renderSegments(atNew, 0);
+      return;
+    }
+
+    // Alt + ↑ / ↓：上移 / 下移当前分段（保留光标位置）
+    if (ev.altKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) {
+      ev.preventDefault();
+      var dir = ev.key === 'ArrowUp' ? -1 : 1;
+      var caret = ta.selectionStart;
+      var to = moveSegment(i, dir);
+      if (to < 0) {
+        toast(dir < 0 ? '已经是第一段了' : '已经是最后一段了');
+        return;
+      }
+      persistLocal();
+      renderSegments(to, caret);
+      return;
+    }
 
     // 末段末尾按 Enter → 新建下一段（Shift+Enter 仍为换行）
     if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing &&
