@@ -40,7 +40,8 @@ function createApp(opt) {
     mediaCleanup: async () => {
       if (!store.settings.mediaCleanupEnabled) return;
       const days = store.settings.mediaCleanupDays == null ? 0 : store.settings.mediaCleanupDays;
-      await cleanupOrphans({ store, media, days });
+      const graceHours = store.settings.mediaCleanupGraceHours == null ? 24 : store.settings.mediaCleanupGraceHours;
+      await cleanupOrphans({ store, media, days, graceHours });
     }
   });
   const routes = makeRoutes({ store, accounts, publisher, scheduler, media, config: cfg });

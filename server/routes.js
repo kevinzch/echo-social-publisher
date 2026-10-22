@@ -68,7 +68,9 @@ function makeRoutes(ctx) {
     if (Array.isArray(body.segments)) {
       segments = body.segments.map((s) => ({
         text: typeof s.text === 'string' ? s.text : '',
-        media: Array.isArray(s.media) ? s.media.filter((m) => typeof m === 'string') : []
+        media: Array.isArray(s.media) ? s.media.filter((m) => typeof m === 'string') : [],
+        // 保存每段勾选/排除了哪些平台，换设备打开时才能完整还原
+        exclude: Array.isArray(s.exclude) ? s.exclude.filter((x) => typeof x === 'string') : []
       }));
     } else if (typeof body.text === 'string') {
       segments = ThreadText.splitSegments(body.text).map((t) => ({ text: t, media: [] }));
@@ -480,6 +482,7 @@ function makeRoutes(ctx) {
           logRetention: store.settings.logRetention || config.logRetention,
           mediaCleanupEnabled: !!store.settings.mediaCleanupEnabled,
           mediaCleanupDays: store.settings.mediaCleanupDays == null ? 0 : store.settings.mediaCleanupDays,
+          mediaCleanupGraceHours: store.settings.mediaCleanupGraceHours == null ? 24 : store.settings.mediaCleanupGraceHours,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
         }
       })
@@ -494,6 +497,7 @@ function makeRoutes(ctx) {
           if (typeof body.logRetention === 'number') patch.logRetention = Math.max(10, Math.min(5000, body.logRetention));
           if (typeof body.mediaCleanupEnabled === 'boolean') patch.mediaCleanupEnabled = body.mediaCleanupEnabled;
           if (typeof body.mediaCleanupDays === 'number') patch.mediaCleanupDays = Math.max(0, Math.min(3650, Math.floor(body.mediaCleanupDays)));
+          if (typeof body.mediaCleanupGraceHours === 'number') patch.mediaCleanupGraceHours = Math.max(0, Math.min(720, Math.floor(body.mediaCleanupGraceHours)));
           const saved = store.saveSettings(patch);
           if (typeof body.threadsImageBaseUrl === 'string') {
             // 运行时覆盖（本次进程有效；持久化需写入 .env 的 THREADS_IMAGE_BASE_URL）
@@ -537,9 +541,13 @@ function makeRoutes(ctx) {
         const url = new URL(req.url, 'http://x');
         const raw = parseInt(url.searchParams.get('days') || '0', 10);
         const days = Number.isFinite(raw) ? Math.max(0, Math.min(3650, raw)) : 0;
-        const orphans = findOrphans({ store, media, days });
+        const gRaw = parseInt(url.searchParams.get('grace') || '', 10);
+        const graceHours = Number.isFinite(gRaw) ? Math.max(0, Math.min(720, gRaw))
+          : (store.settings.mediaCleanupGraceHours == null ? 24 : store.settings.mediaCleanupGraceHours);
+        const orphans = findOrphans({ store, media, days, graceHours });
         sendJson(res, 200, {
           days,
+          graceHours,
           count: orphans.length,
           totalBytes: orphans.reduce((sum, m) => sum + (m.size || 0), 0),
           orphans: orphans.map((m) => ({ id: m.id, name: m.name, size: m.size, createdAt: m.createdAt }))
@@ -553,8 +561,11 @@ function makeRoutes(ctx) {
           const body = await readJsonBody(req).catch(() => ({}));
           const raw = Number(body && body.days);
           const days = Number.isFinite(raw) ? Math.max(0, Math.min(3650, Math.floor(raw))) : 0;
-          const r = await cleanupOrphans({ store, media, days });
-          sendJson(res, 200, { ok: true, days, ...r });
+          const gRaw = Number(body && body.graceHours);
+          const graceHours = Number.isFinite(gRaw) ? Math.max(0, Math.min(720, Math.floor(gRaw)))
+            : (store.settings.mediaCleanupGraceHours == null ? 24 : store.settings.mediaCleanupGraceHours);
+          const r = await cleanupOrphans({ store, media, days, graceHours });
+          sendJson(res, 200, { ok: true, days, graceHours, ...r });
         } catch (err) {
           sendError(res, 400, err.message);
         }

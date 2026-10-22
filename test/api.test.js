@@ -661,12 +661,12 @@ test('孤儿图片：预览与清理只删除未被引用的图片', async (t) =
     createdAt: now, updatedAt: now
   });
 
-  const pv = await req(base, 'GET', '/api/media/orphans?days=0');
+  const pv = await req(base, 'GET', '/api/media/orphans?days=0&grace=0');
   assert.equal(pv.status, 200);
   assert.equal(pv.data.count, 1, '只应列出未被引用的图片');
   assert.equal(pv.data.orphans[0].id, orphan.data.media.id);
 
-  const cl = await req(base, 'POST', '/api/media/cleanup', { days: 0 });
+  const cl = await req(base, 'POST', '/api/media/cleanup', { days: 0, graceHours: 0 });
   assert.equal(cl.data.removed, 1);
   assert.ok(cl.data.freedBytes > 0);
 
@@ -692,4 +692,31 @@ test('图片清理设置：默认关闭，可开启并保存天数', async (t) =
   await req(base, 'PUT', '/api/settings', { mediaCleanupDays: -5 });
   const s3 = await req(base, 'GET', '/api/settings');
   assert.equal(s3.data.settings.mediaCleanupDays, 0);
+});
+
+test('草稿保存每段的平台勾选（换设备可完整还原）', async (t) => {
+  const { base, app } = await startTestApp();
+  t.after(() => app.server.close());
+
+  const created = await req(base, 'POST', '/api/drafts', {
+    title: '带勾选的草稿',
+    accountIds: ['x:1'],
+    segments: [
+      { text: '第一段', media: [], exclude: ['x'] },
+      { text: '第二段', media: [], exclude: ['threads', 'bluesky'] }
+    ]
+  });
+  assert.equal(created.status, 200);
+  assert.deepEqual(created.data.draft.segments[0].exclude, ['x']);
+  assert.deepEqual(created.data.draft.segments[1].exclude, ['threads', 'bluesky']);
+
+  // 更新后仍然保留
+  const id = created.data.draft.id;
+  await req(base, 'PUT', '/api/drafts/' + id, {
+    title: '改过',
+    accountIds: ['x:1'],
+    segments: [{ text: '第一段', media: [], exclude: ['bluesky'] }]
+  });
+  const got = await req(base, 'GET', '/api/drafts/' + id);
+  assert.deepEqual(got.data.draft.segments[0].exclude, ['bluesky']);
 });

@@ -18,13 +18,19 @@ function referencedIds(store) {
 }
 
 /**
- * @param {{store:object, media:object, days:number, now?:number}} opts
- * days=0 表示不设时间门槛（立即清理）
+ * @param {{store:object, media:object, days:number, graceHours?:number, now?:number}} opts
+ * days=0 表示不按"保留天数"过滤；graceHours 是"新图保护期"，
+ * 刚上传的图片在保护期内一律不删（避免刚粘贴就被清理）。
+ * 实际门槛取两者中更严格的一个。
  */
-function findOrphans({ store, media, days, now }) {
+function findOrphans({ store, media, days, graceHours, now }) {
   const used = referencedIds(store);
   const base = now == null ? Date.now() : now;
-  const cutoff = base - Math.max(0, days || 0) * 24 * 3600 * 1000;
+  const minAgeMs = Math.max(
+    Math.max(0, days || 0) * 24 * 3600 * 1000,
+    Math.max(0, graceHours || 0) * 3600 * 1000
+  );
+  const cutoff = base - minAgeMs;
   return media.list().filter((m) => {
     if (used.has(m.id)) return false;
     const created = m.createdAt ? new Date(m.createdAt).getTime() : 0;
@@ -32,8 +38,8 @@ function findOrphans({ store, media, days, now }) {
   });
 }
 
-async function cleanupOrphans({ store, media, days, now }) {
-  const list = findOrphans({ store, media, days, now });
+async function cleanupOrphans({ store, media, days, graceHours, now }) {
+  const list = findOrphans({ store, media, days, graceHours, now });
   let freedBytes = 0;
   let removed = 0;
   for (const m of list) {
